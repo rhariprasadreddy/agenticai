@@ -1,21 +1,31 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 .venv/
-env/
 venv/
+env/
 
-# VS Code / Remote
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# Logs & dumps
+*.log
+
+# Editor / IDE
 .vscode/
 .vscode-server/
+.idea/
 
-# System / OS
+# OS cruft
 .DS_Store
 Thumbs.db
 
-# Docker / Build / Secrets
-*.log
+# Docker / Compose
 .env
-dist/
-build/
+*.pid
+
+# Node (in case future UI)
+node_modules/
