@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+env/
+venv/
+
+# VS Code / Remote
+.vscode/
+.vscode-server/
+
+# System / OS
+.DS_Store
+Thumbs.db
+
+# Docker / Build / Secrets
+*.log
+.env
+dist/
+build/
