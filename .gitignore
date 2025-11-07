@@ -29,3 +29,29 @@ Thumbs.db
 
 # Node (in case future UI)
 node_modules/
+
+# ---- safety net for home-dotfiles accidentally copied ----
+.*
+!.gitignore
+!.gitattributes
+!.github/
+!.gitmodules
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.vscode-server/
+
+# Python & build
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+dist/
+build/
+
+# secrets/logs
+.env
+*.log
