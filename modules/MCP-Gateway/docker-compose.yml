@@ -3,21 +3,131 @@ services:
     build: .
     container_name: mcp-gateway
     environment:
-      ORCH_URL: http://mcp-orchestrator:8081
+      ORCH_URL: http://orchestrator:8081
       API_KEY: dev-key
     ports:
       - "8080:8080"
     depends_on:
-      - mcp-orchestrator
+      - orchestrator
 
-  mcp-orchestrator:
-    image: python:3.11-slim
-    container_name: mcp-orchestrator
-    working_dir: /app
-    volumes:
-      - ./orchestrator_stub.py:/app/orchestrator_stub.py:ro
-    command: >
-      sh -c "pip install -q fastapi uvicorn &&
-             uvicorn orchestrator_stub:app --host 0.0.0.0 --port 8081"
+  orchestrator:
+    build:
+      context: ../Orchestrator
+    container_name: orchestrator
+    environment:
+      A1_URL: http://a1:9001
+      A2_URL: http://a2:9002
+      A3_URL: http://a3:9003
+      A4_URL: http://a4:9004
+      A5_URL: http://a5:9005
     ports:
       - "8081:8081"
+    depends_on:
+      - a1
+      - a2
+      - a3
+      - a4
+      - a5
+
+  a1:
+    image: python:3.11-slim
+    container_name: agent-a1
+    command:
+      - sh
+      - -lc
+      - |
+        pip install fastapi uvicorn
+        python - <<'PY'
+        from fastapi import FastAPI, Request
+        app=FastAPI()
+        @app.post('/diet-rules')
+        async def diet_rules(req: Request):
+            body = await req.json()
+            return {'version':'v1','patient_id':body.get('patient_id'),
+                    'rules':{'allow':['brown rice','lentils'],'limit':['sugar']}}
+        import uvicorn; uvicorn.run(app, host='0.0.0.0', port=9001)
+        PY
+    ports: ["9001:9001"]
+
+  a2:
+    image: python:3.11-slim
+    container_name: agent-a2
+    command:
+      - sh
+      - -lc
+      - |
+        pip install fastapi uvicorn
+        python - <<'PY'
+        from fastapi import FastAPI, Request
+        app=FastAPI()
+        @app.post('/gaps')
+        async def gaps(req: Request):
+            body = await req.json()
+            return {'version':'v1','patient_id':body.get('patient_id'),
+                    'gaps':[{'nutrient':'iron','severity':'mild'}]}
+        import uvicorn; uvicorn.run(app, host='0.0.0.0', port=9002)
+        PY
+    ports: ["9002:9002"]
+
+  a3:
+    image: python:3.11-slim
+    container_name: agent-a3
+    command:
+      - sh
+      - -lc
+      - |
+        pip install fastapi uvicorn
+        python - <<'PY'
+        from fastapi import FastAPI, Request
+        app=FastAPI()
+        @app.post('/targets')
+        async def targets(req: Request):
+            body = await req.json()
+            return {'version':'v1','patient_id':body.get('patient_id'),
+                    'kcal':2000,'macros':{'carb':50,'prot':20,'fat':30},'micros':{}}
+        import uvicorn; uvicorn.run(app, host='0.0.0.0', port=9003)
+        PY
+    ports: ["9003:9003"]
+
+  a4:
+    image: python:3.11-slim
+    container_name: agent-a4
+    command:
+      - sh
+      - -lc
+      - |
+        pip install fastapi uvicorn
+        python - <<'PY'
+        from fastapi import FastAPI, Request
+        app=FastAPI()
+        @app.post('/conflicts')
+        async def conflicts(req: Request):
+            body = await req.json()
+            return {'version':'v1','patient_id':body.get('patient_id'),
+                    'items':[{'type':'drug-nutrient','note':'metformin ↔ B12'}]}
+        import uvicorn; uvicorn.run(app, host='0.0.0.0', port=9004)
+        PY
+    ports: ["9004:9004"]
+
+  a5:
+    image: python:3.11-slim
+    container_name: agent-a5
+    command:
+      - sh
+      - -lc
+      - |
+        pip install fastapi uvicorn
+        python - <<'PY'
+        from fastapi import FastAPI, Request
+        app=FastAPI()
+        @app.post('/plan')
+        async def plan(req: Request):
+            body = await req.json()
+            pid = body.get('patient_id','case-1')
+            plan = {'mon':['oats','lentils'],'tue':['brown rice','tofu']}
+            return {'version':'v1','patient_id':pid,'plan':plan,
+                    'shopping_list':['oats','lentils','tofu'],
+                    'trace':{'steps':['A1','A2','A3','A4','A5']}}
+        import uvicorn; uvicorn.run(app, host='0.0.0.0', port=9005)
+        PY
+    ports: ["9005:9005"]
