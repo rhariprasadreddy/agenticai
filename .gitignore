@@ -55,3 +55,20 @@ build/
 # secrets/logs
 .env
 *.log
+# editor/IDE
+.vscode/
+.vscode-server/
+# python
+__pycache__/
+*.pyc
+# docker
+**/.env
+# data/models (tracked elsewhere)
+data/
+models/
+work/
+logs/
+*.onnx
+*.bin
+*.pt
+*.safetensors
