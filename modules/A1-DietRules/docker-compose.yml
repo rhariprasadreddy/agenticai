@@ -1,0 +1,6 @@
+services:
+  a1:
+    build: .
+    container_name: agent-a1
+    ports:
+      - "9001:9001"

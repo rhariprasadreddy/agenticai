@@ -1,0 +1,42 @@
+diagnosis: "E11.9"   # Type 2 DM without complications (ICD-10)
+principles:
+  - "Prefer low/medium GI carbs; pair with protein/fat."
+  - "Distribute carbs over meals; avoid sugar-sweetened beverages."
+  - "Emphasize fiber (>25–30 g/day) and whole foods."
+allow:
+  - oats
+  - brown rice
+  - quinoa
+  - whole-wheat chapati
+  - lentils
+  - beans
+  - tofu
+  - non-starchy vegetables
+  - low-GI fruits (berries, apple, pear)
+limit:
+  - white rice
+  - refined flour (maida)
+  - tropical ripe fruits (mango, banana) # small portions only
+  - high-fat dairy
+  - red/processed meat
+avoid:
+  - sugar-sweetened beverages
+  - fruit juice
+  - desserts/cakes/candies
+  - deep-fried snacks
+portions:
+  default:
+    cooked_grains_g: 150       # ~1 cup cooked
+    lentils_g: 150             # ~1 cup cooked
+    chapati_count: 2
+    fruit_serving_g: 80        # ~1 small fruit or 1/2 cup berries
+    nuts_g: 20
+  culture_overrides:
+    south-indian:
+      cooked_rice_g: 150       # small bowl
+      idli_count: 2
+      dosa_piece: 1            # small, with sambar; avoid butter
+notes:
+  - "Pair carbs with protein (e.g., oats+tofu, dosa+sambar)."
+  - "Prefer steaming/boiling/grilling; avoid deep frying."
+  - "Split fruit across meals; avoid juices."
