@@ -3,22 +3,8 @@ from typing import Dict
 from .schemas import Profile, Plan
 from .registry import list_schemas
 from .router import run_pipeline
-from pydantic import BaseModel
-from .router import route_user_message  # import the new router
+
 app = FastAPI(title="MCP Orchestrator", version="0.1.0")
-
-class ChatRequest(BaseModel):
-    message: str
-
-class ChatResponse(BaseModel):
-    reply: str
-    provider: str
-    specialized: bool
-
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    result = route_user_message(req.message)
-    return ChatResponse(**result)
 
 # Simple in-memory store (OK for dev/tests)
 PLANS: Dict[str, Plan] = {}

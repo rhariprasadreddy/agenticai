@@ -1,38 +1,21 @@
-# app/router.py
-import os
-import asyncio
-import httpx
-
+import os, asyncio, httpx
 from fastapi import HTTPException
-
 from .schemas import Profile, DietRules, Gaps, Targets, Conflicts, Plan
 from .tools.diabetes_qwen_ov import is_diabetes_query, call_diabetes_qwen
 
-# -------------------------------------------------------------------
-# Generic LLM fallback (for non-diabetes queries)
-# -------------------------------------------------------------------
+# This is your existing generic call – leave it as-is:
 def call_generic_llm(prompt: str) -> str:
     """
-    Fallback path for non-diabetes queries.
-
-    For now, this is a simple stub so that the /chat endpoint
-    never crashes. You can later replace this with a call to MCP-Gateway
-    or another LLM service.
+    Existing logic that calls your default LLM / MCP tools.
+    (Fill in with your current implementation.)
     """
-    return (
-        "This orchestrator demo is currently focused on diet guidance for "
-        "type-2 diabetes. Your question appears to be outside this scope "
-        f"(you asked: {prompt!r}). Please ask a diabetes-related question, "
-        "or integrate call_generic_llm() with your MCP-Gateway."
-    )
+    # e.g. forward to MCP-Gateway or local model
+    raise NotImplementedError
 
 
-# -------------------------------------------------------------------
-# Simple text router for /chat
-# -------------------------------------------------------------------
 def route_user_message(user_message: str) -> dict:
     """
-    Central routing function used by your FastAPI /chat endpoint.
+    Central routing function used by your FastAPI endpoint.
     Returns a dict with the reply and some metadata.
     """
 
@@ -49,14 +32,10 @@ def route_user_message(user_message: str) -> dict:
     completion = call_generic_llm(user_message)
     return {
         "reply": completion,
-        "provider": "generic_llm_stub",
+        "provider": "generic_llm",
         "specialized": False,
     }
 
-
-# -------------------------------------------------------------------
-# Existing A1–A5 pipeline (unchanged)
-# -------------------------------------------------------------------
 A1_URL = os.getenv("A1_URL", "http://a1:9001")
 A2_URL = os.getenv("A2_URL", "http://a2:9002")
 A3_URL = os.getenv("A3_URL", "http://a3:9003")
@@ -66,14 +45,12 @@ A5_URL = os.getenv("A5_URL", "http://a5:9005")
 TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 HEADERS = {"Content-Type": "application/json"}
 
-
 async def call(url: str, payload: dict) -> dict:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         r = await client.post(url, json=payload, headers=HEADERS)
         if r.status_code >= 400:
             raise HTTPException(status_code=r.status_code, detail=r.text)
         return r.json()
-
 
 async def run_pipeline(profile: Profile) -> Plan:
     # A1 → diet rules
@@ -103,4 +80,3 @@ async def run_pipeline(profile: Profile) -> Plan:
     a5 = await call(f"{A5_URL}/plan", a5_payload)
     plan = Plan(**a5)
     return plan
-
