@@ -1,74 +1,17 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-env/
-
-# Build / dist
-build/
-dist/
-*.egg-info/
-
-# Logs & dumps
-*.log
-
-# Editor / IDE
-.vscode/
-.vscode-server/
-.idea/
-
-# OS cruft
-.DS_Store
-Thumbs.db
-
-# Docker / Compose
-.env
-*.pid
-
-# Node (in case future UI)
-node_modules/
-
-# ---- safety net for home-dotfiles accidentally copied ----
-.*
-!.gitignore
-!.gitattributes
-!.github/
-!.gitmodules
-
-# OS/editor junk
-.DS_Store
-Thumbs.db
-.vscode/
-.vscode-server/
-
-# Python & build
-__pycache__/
-*.pyc
-.venv/
-env/
-venv/
-dist/
-build/
-
-# secrets/logs
-.env
-*.log
-# editor/IDE
-.vscode/
-.vscode-server/
-# python
-__pycache__/
-*.pyc
-# docker
-**/.env
-# data/models (tracked elsewhere)
-data/
+# Ignore model weights and large artifacts
 models/
-work/
-logs/
-*.onnx
+**/models/
+*.safetensors
 *.bin
 *.pt
-*.safetensors
+*.onnx
+*.xml
+*.bin
+*.pb
+*.h5
+
+# Python noise
+__pycache__/
+*.pyc
+.env
+.venv
