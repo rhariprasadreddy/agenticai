@@ -14,9 +14,10 @@ from transformers import AutoTokenizer, AutoConfig
 # -------------------------------------------------------------------
 # Paths (inside container: /models is volume)
 # -------------------------------------------------------------------
-MERGED_DIR = Path(os.getenv("MERGED_DIR", "/models/diabetes_qwen_merged_fp16"))
-OV_DIR = Path(os.getenv("OV_DIR", "/models/ov_diabetes_qwen_fp16"))
 
+BASE_DIR = Path(os.getenv("MODEL_BASE_DIR", "/home/agenticai/models/diabetes_qwen_ov"))
+MERGED = Path(os.getenv("MERGED_DIR", str(BASE_DIR)))
+OV_DIR = Path(os.getenv("OV_DIR", str(BASE_DIR)))
 # Keep replies short by default
 MAX_NEW_TOKENS_DEFAULT = int(os.getenv("MAX_NEW_TOKENS", "64"))
 

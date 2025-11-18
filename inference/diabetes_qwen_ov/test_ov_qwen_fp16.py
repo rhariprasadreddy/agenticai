@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import numpy as np
-
+import os
 from openvino import Core
 from transformers import AutoTokenizer, AutoConfig
 
-MERGED = Path("/home/agenticai/agenticai/models/diabetes_qwen_merged_fp16")
-OV_DIR = Path("/home/agenticai/agenticai/models/ov_diabetes_qwen_fp16")
+BASE_DIR = Path(os.getenv("MODEL_BASE_DIR", "/home/agenticai/models/diabetes_qwen_ov"))
+MERGED = Path(os.getenv("MERGED_DIR", str(BASE_DIR)))
+OV_DIR = Path(os.getenv("OV_DIR", str(BASE_DIR)))
 
 # 1) Load tokenizer & config from merged HF model
 print("🔹 Loading tokenizer & config...")

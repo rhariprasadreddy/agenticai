@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import numpy as np
-
+import os
 from openvino import Core
 from transformers import AutoTokenizer, AutoConfig
 
-MERGED = Path("/home/agenticai/agenticai/models/diabetes_qwen_merged_fp16")
-OV_DIR = Path("/home/agenticai/agenticai/models/ov_diabetes_qwen_fp16")
+HF_DIR_DEFAULT = "/home/agenticai/agenticai/models/diabetes_qwen_merged_fp16"
+OV_DIR_DEFAULT = "/home/agenticai/models/diabetes_qwen_ov"
 
-# 1) Tokenizer + config from merged HF model
+MERGED = Path(os.getenv("MERGED_DIR", HF_DIR_DEFAULT))
+OV_DIR = Path(os.getenv("OV_DIR", OV_DIR_DEFAULT))
+
+print("🔹 Using HF merged dir:", MERGED)
+print("�� Using OV IR dir   :", OV_DIR)
+
+
+# 1) Load tokenizer & config from merged HF model
 print("🔹 Loading tokenizer & config...")
 tok = AutoTokenizer.from_pretrained(
     str(MERGED),
@@ -24,15 +31,10 @@ config = AutoConfig.from_pretrained(
 
 eos_id = config.eos_token_id or tok.eos_token_id
 
-# 2) OpenVINO BF16 / AMX load
+# 2) Load OpenVINO IR
 print("🔹 Loading OpenVINO model (BF16 hint)...")
 core = Core()
-
-# Ask CPU plugin to run in BF16 where possible (this is where AMX BF16 kicks in)
-core.set_property("CPU", {
-    "INFERENCE_PRECISION_HINT": "bf16"
-})
-
+core.set_property("CPU", {"INFERENCE_PRECISION_HINT": "bf16"})
 compiled_model = core.compile_model(str(OV_DIR / "model_fp16.xml"), "CPU")
 output = compiled_model.output(0)
 
