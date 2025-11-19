@@ -15,3 +15,12 @@ __pycache__/
 *.pyc
 .env
 .venv
+
+# ignore data files
+data/raw/
+data/**/raw/
+data/**/pdf
+*.parquet
+*.csv
+rag/**/faiss_index/*
+
