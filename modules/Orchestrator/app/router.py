@@ -1,38 +1,27 @@
 # app/router.py
-import os
-import asyncio
-import httpx
-
+import os, asyncio, httpx
 from fastapi import HTTPException
 
 from .schemas import Profile, DietRules, Gaps, Targets, Conflicts, Plan
+
 from .tools.diabetes_qwen_ov import is_diabetes_query, call_diabetes_qwen
+from .tools.hypertension_qwen_ov import is_hypertension_query, call_htn_qwen
 
 # -------------------------------------------------------------------
 # Generic LLM fallback (for non-diabetes queries)
 # -------------------------------------------------------------------
 def call_generic_llm(prompt: str) -> str:
     """
-    Fallback path for non-diabetes queries.
-
-    For now, this is a simple stub so that the /chat endpoint
-    never crashes. You can later replace this with a call to MCP-Gateway
-    or another LLM service.
+    Existing logic that calls your default LLM / MCP tools.
+    (Fill in with your current implementation.)
     """
-    return (
-        "This orchestrator demo is currently focused on diet guidance for "
-        "type-2 diabetes. Your question appears to be outside this scope "
-        f"(you asked: {prompt!r}). Please ask a diabetes-related question, "
-        "or integrate call_generic_llm() with your MCP-Gateway."
-    )
+    # e.g. forward to MCP-Gateway or local model
+    raise NotImplementedError
 
 
-# -------------------------------------------------------------------
-# Simple text router for /chat
-# -------------------------------------------------------------------
 def route_user_message(user_message: str) -> dict:
     """
-    Central routing function used by your FastAPI /chat endpoint.
+    Central routing function used by your FastAPI endpoint.
     Returns a dict with the reply and some metadata.
     """
 
@@ -45,11 +34,20 @@ def route_user_message(user_message: str) -> dict:
             "specialized": True,
         }
 
-    # 2) Fallback: generic orchestrator path
+    # 2) Hypertension-specialized routing
+    if is_hypertension_query(user_message):
+        completion = call_htn_qwen(user_message)
+        return {
+            "reply": completion,
+            "provider": "hypertension_qwen_ov",
+            "specialized": True,
+        }
+
+    # 3) Fallback: generic orchestrator path
     completion = call_generic_llm(user_message)
     return {
         "reply": completion,
-        "provider": "generic_llm_stub",
+        "provider": "generic_llm",
         "specialized": False,
     }
 
