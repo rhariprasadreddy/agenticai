@@ -24,3 +24,12 @@ data/**/pdf
 *.csv
 rag/**/faiss_index/*
 
+# Local archives and snapshots
+archive/
+modules/Orchestrator/app/archive/
+inference/diabetes_qwen_ov/backups/
+
+# Local JSON logs/configs not meant for Git
+diabeticschat.json
+gateway-profile.json
+profile-orch.json

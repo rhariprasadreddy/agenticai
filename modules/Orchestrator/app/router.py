@@ -6,6 +6,8 @@ from .schemas import Profile, DietRules, Gaps, Targets, Conflicts, Plan
 
 from .tools.diabetes_qwen_ov import is_diabetes_query, call_diabetes_qwen
 from .tools.hypertension_qwen_ov import is_hypertension_query, call_htn_qwen
+from .tools.lipids_qwen_ov import is_lipids_query, call_lipids_qwen
+from .tools.kidney_qwen_ov import is_kidney_query, call_kidney_qwen 
 
 # -------------------------------------------------------------------
 # Generic LLM fallback (for non-diabetes queries)
@@ -43,7 +45,25 @@ def route_user_message(user_message: str) -> dict:
             "specialized": True,
         }
 
-    # 3) Fallback: generic orchestrator path
+    # 3) Lipids-specialized routing
+    if is_lipids_query(user_message):
+        completion = call_lipids_qwen(user_message)
+        return {
+            "reply": completion,
+            "provider": "lipids_qwen_ov",
+            "specialized": True,
+        }
+
+    # 4) Kidney-specialized routing
+    if is_kidney_query(user_message):
+        completion = call_kidney_qwen(user_message)
+        return {
+            "reply": completion,
+            "provider": "kidney_qwen_ov",
+            "specialized": True,
+        }
+
+   # 5) Fallback: generic orchestrator path
     completion = call_generic_llm(user_message)
     return {
         "reply": completion,
