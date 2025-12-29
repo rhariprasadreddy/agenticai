@@ -1,0 +1,14 @@
+# HTN-001
+Suggest a one-day low-sodium diet plan for an adult with hypertension who walks 30 minutes a day. Be concise and practical.
+
+# HTN-002
+What are three important lifestyle tips for someone newly diagnosed with hypertension?
+
+# HTN-003
+Give a sample vegetarian Indian breakfast, lunch and dinner suitable for a hypertensive patient on a DASH-style diet.
+
+# HTN-004
+How should a person with high blood pressure handle eating at a buffet or party to avoid excess salt intake?
+
+# HTN-005
+Explain in simple terms how sodium and potassium affect blood pressure.
