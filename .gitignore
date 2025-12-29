@@ -51,3 +51,12 @@ data/raw/
 # RAG indexes
 # -----------------------------
 rag/**/faiss_index/
+
+# --- Eval outputs / logs ---
+eval/
+archive/
+logs/
+logs_dir/
+*.log
+*.jsonl
+

@@ -1,35 +1,0 @@
-Calling add_step_closure function does not have any effect. It's lazy mode only functionality. (warning logged once)
-Calling mark_step function does not have any effect. It's lazy mode only functionality. (warning logged once)
-Calling iter_mark_step function does not have any effect. It's lazy mode only functionality. (warning logged once)
-[WARNING|utils.py:212] 2025-11-19 14:29:23,959 >> optimum-habana v1.12.0 has been validated for SynapseAI v1.16.0 but habana-frameworks v1.22.1.6 was found, this could lead to undefined behavior!
-[WARNING|utils.py:225] 2025-11-19 14:29:25,207 >> optimum-habana v1.12.0 has been validated for SynapseAI v1.16.0 but the driver version is v1.22.1, this could lead to undefined behavior!
-Special tokens have been added in the vocabulary, make sure the associated word embeddings are fine-tuned or trained.
-Map:   0%|          | 0/1800 [00:00<?, ? examples/s]Map:  56%|█████▌    | 1000/1800 [00:00<00:00, 3181.55 examples/s]Map: 100%|██████████| 1800/1800 [00:00<00:00, 3283.54 examples/s]Map: 100%|██████████| 1800/1800 [00:00<00:00, 3257.90 examples/s]
-Map:   0%|          | 0/200 [00:00<?, ? examples/s]Map: 100%|██████████| 200/200 [00:00<00:00, 3477.16 examples/s]
-✅ GenConfig normalized: {'attn_softmax_bf16': False, 'use_flash_attention': False, 'use_flash_attention_2': False, 'flash_attention_recompute': False, 'flash_attention_causal_mask': False, 'hpu_graphs': False, 'flash_attention_dropout': False, 'flash_attention_window': False, 'flash_attention_scale': False, 'flash_attention_fuse_softmax': False, 'flash_attention_fuse_qk': False, 'flash_attention_fp8': False, 'flash_attention_quantization': False, 'flash_attention_query_key_layer_scaling': False}
-/usr/local/lib/python3.10/dist-packages/transformers/deepspeed.py:23: FutureWarning: transformers.deepspeed module is deprecated and will be removed in a future version. Please import deepspeed modules directly from transformers.integrations
-  warnings.warn(
-✅ Using local Gaudi config dir: /workspace/gaudi2_cfg
-✅ trainable params: 18,464,768 / 1,562,179,072
-============================= HPU PT BRIDGE CONFIGURATION ON RANK = 0 ============= 
- PT_HPU_LAZY_MODE = 0
- PT_HPU_RECIPE_CACHE_CONFIG = ,false,1024,false
- PT_HPU_MAX_COMPOUND_OP_SIZE = 9223372036854775807
- PT_HPU_LAZY_ACC_PAR_MODE = 1
- PT_HPU_ENABLE_REFINE_DYNAMIC_SHAPES = 0
- PT_HPU_EAGER_PIPELINE_ENABLE = 1
- PT_HPU_EAGER_COLLECTIVE_PIPELINE_ENABLE = 1
- PT_HPU_ENABLE_LAZY_COLLECTIVES = 0
----------------------------: System Configuration :---------------------------
-Num CPU Cores : 160
-CPU RAM       : 2015 GB
-------------------------------------------------------------------------------
-  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:01<00:01,  1.83s/it]/usr/local/lib/python3.10/dist-packages/peft/utils/save_and_load.py:195: UserWarning: Could not find a config file in /workspace/.hf/models/qwen2.5-1.5b-instruct - will assume that the vocabulary was not modified.
-  warnings.warn(
-100%|██████████| 2/2 [00:09<00:00,  5.29s/it]/usr/local/lib/python3.10/dist-packages/peft/utils/save_and_load.py:195: UserWarning: Could not find a config file in /workspace/.hf/models/qwen2.5-1.5b-instruct - will assume that the vocabulary was not modified.
-  warnings.warn(
-                                             {'train_runtime': 12.0635, 'train_samples_per_second': 0.332, 'train_steps_per_second': 0.166, 'train_loss': 0.09660042822360992, 'epoch': 2.0, 'memory_allocated (GB)': np.float64(11.47), 'max_memory_allocated (GB)': np.float64(63.2), 'total_memory_available (GB)': np.float64(94.62)}
-100%|██████████| 2/2 [00:12<00:00,  5.29s/it]100%|██████████| 2/2 [00:12<00:00,  6.03s/it]
-/usr/local/lib/python3.10/dist-packages/peft/utils/save_and_load.py:195: UserWarning: Could not find a config file in /workspace/.hf/models/qwen2.5-1.5b-instruct - will assume that the vocabulary was not modified.
-  warnings.warn(
-✅ HTN training done. Adapters saved to: /workspace/models/hypertension_qwen_lora
