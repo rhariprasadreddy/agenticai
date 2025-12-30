@@ -56,3 +56,21 @@ eval/
 *.log
 *.jsonl
 
+
+# --- editor / backup artifacts ---
+*.bak
+*.wkg
+*.swp
+*~
+
+# --- data artifacts (don’t commit datasets) ---
+data/**/curated/*.jsonl
+data/**/work/*.jsonl
+data/**/raw/
+data/**/pdf/
+data/**/notes/
+
+# --- eval / logs ---
+eval/
+*.log
+
