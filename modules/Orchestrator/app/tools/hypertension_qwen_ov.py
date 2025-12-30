@@ -1,10 +1,8 @@
 # app/tools/hypertension_qwen_ov.py
 import os
-from typing import Optional
-
 import requests
 
-# OV service endpoint for hypertension model (running on inference server 69)
+# OV service endpoint for hypertension model (Xeon inference server)
 HYPERTENSION_OV_URL = os.getenv(
     "HYPERTENSION_OV_URL",
     "http://192.168.2.69:8082",
@@ -12,24 +10,27 @@ HYPERTENSION_OV_URL = os.getenv(
 
 # ----------------------------------------------------------------------
 # Structured system prompt for hypertension / DASH diet
+# Lipids-style layout (Breakfast/Lunch/etc.)
 # ----------------------------------------------------------------------
-
 SYSTEM_PROMPT = """
 You are a clinical diet specialist focused exclusively on hypertension (high blood pressure)
-and cardiometabolic risk.
+and cardiometabolic risk in Indian adults.
 
-You must follow these STRICT rules:
-- Base all advice ONLY on DASH (Dietary Approaches to Stop Hypertension).
-- Prefer Indian vegetarian foods (dal, sabzi, roti, idli, dosa, sambar, upma, poha, millets).
-- Strongly restrict sodium, pickles, papad, fried snacks, processed foods, bakery items,
-  restaurant foods, and instant noodles.
-- NEVER invent new "Patient request" sections. Respond ONLY once.
-- NEVER ask follow-up questions.
-- NEVER continue beyond the required meal plan.
-- Output MUST strictly follow the required format below.
-- KEEP THE RESPONSE UNDER 300 WORDS.
+STRICT RULES:
+- Base all advice ONLY on the DASH (Dietary Approaches to Stop Hypertension) principles.
+- Prefer Indian vegetarian foods:
+  dal, sabzi, roti, idli, dosa, sambar, upma, poha, curd, buttermilk, millets, fruits, salads.
+- Strongly restrict:
+  sodium, pickles, papad, fried snacks, processed foods, bakery items, restaurant foods,
+  instant noodles, salted namkeens, preserved meats.
+- Keep response UNDER 300 words.
+- Do NOT ask follow-up questions.
+- Do NOT start a dialogue; respond only once.
+- Do NOT repeat the “Patient request” text.
+- Do NOT add any sections beyond the ones listed below.
+- Output MUST strictly follow the exact headings and bullet structure below.
 
-Required OUTPUT FORMAT:
+OUTPUT FORMAT (exact headings):
 
 Breakfast:
 - Option 1: ...
@@ -54,7 +55,7 @@ Dinner:
 General Guidelines:
 - 4–6 bullet points of lifestyle and salt-reduction advice.
 
-STOP AFTER THIS EXACT FORMAT. DO NOT CONTINUE FURTHER.
+STOP after the General Guidelines bullets. Do NOT continue further or repeat any section.
 """.strip()
 
 
@@ -63,17 +64,15 @@ def build_htn_prompt(user_message: str) -> str:
         SYSTEM_PROMPT
         + "\n\nPatient request:\n"
         + user_message.strip()
-        + "\n\nProvide the diet plan now:\n"
+        + "\n\nNow generate the hypertension DASH-style plan in the exact required format:\n"
     )
 
 
-def is_hypertension_query(text: Optional[str]) -> bool:
+def is_hypertension_query(text: str) -> bool:
     """
     Simple heuristic router for hypertension / blood pressure topics.
     If any of these keywords appear, route to the hypertension agent.
     """
-    if not text:
-        return False
     t = text.lower()
     keywords = [
         "hypertension",
@@ -91,13 +90,10 @@ def is_hypertension_query(text: Optional[str]) -> bool:
     return any(k in t for k in keywords)
 
 
-def call_htn_qwen(
-    user_message: str,
-    max_new_tokens: int = 256,
-    timeout: float = 60.0,
-) -> str:
+def call_htn_qwen(user_message: str, max_new_tokens: int = 260) -> str:
     """
-    Call the Xeon OpenVINO hypertension Qwen service.
+    Call the Xeon OpenVINO hypertension Qwen service, using the fixed
+    structured system prompt plus the user message.
     """
     url = f"{HYPERTENSION_OV_URL}/generate"
     prompt = build_htn_prompt(user_message)
@@ -108,14 +104,10 @@ def call_htn_qwen(
     }
 
     try:
-        r = requests.post(url, json=payload, timeout=timeout)
+        r = requests.post(url, json=payload, timeout=60)
         r.raise_for_status()
         data = r.json()
-        return (
-            data.get("completion")
-            or data.get("text")
-            or data.get("output", "")
-        ).strip()
+        return (data.get("completion") or data.get("text", "")).strip()
     except Exception as e:
         return f"[Hypertension Qwen OV error: {e}]"
 

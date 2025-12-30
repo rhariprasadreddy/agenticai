@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+numpy
+pydantic>=1.10
+# The critical libraries from the working Lipids service
+transformers>=4.38.0
+optimum-intel[openvino]
+openvino>=2024.0.0
+# PyTorch is required for Optimum's high-level API "pt" tensors
+torch --index-url https://download.pytorch.org/whl/cpu
