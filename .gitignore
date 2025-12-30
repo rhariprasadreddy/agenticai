@@ -24,3 +24,35 @@ data/**/pdf
 *.csv
 rag/**/faiss_index/*
 
+
+# -----------------------------
+# Data (generated / runtime – keep OUT of git)
+# -----------------------------
+data/diabetes/
+data/hypertension/
+data/kidney/
+data/lipids/
+data/**/curated/*.jsonl
+data/**/work/
+data/**/notes/
+
+# -----------------------------
+# RAG / Vector DB
+# -----------------------------
+data/rag/
+rag/
+rag/**
+
+# -----------------------------
+# Archives / backups
+# -----------------------------
+archive/
+*.bak
+
+# -----------------------------
+# Eval outputs / logs
+# -----------------------------
+eval/
+*.log
+*.jsonl
+
