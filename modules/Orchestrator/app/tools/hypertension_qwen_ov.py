@@ -3,6 +3,11 @@ import os
 import requests
 
 # OV service endpoint for hypertension model (Xeon inference server)
+
+import os
+import requests
+
+# OV service endpoint for hypertension model (running on Xeon inference server)
 HYPERTENSION_OV_URL = os.getenv(
     "HYPERTENSION_OV_URL",
     "http://192.168.2.69:8082",
@@ -31,6 +36,31 @@ STRICT RULES:
 - Output MUST strictly follow the exact headings and bullet structure below.
 
 OUTPUT FORMAT (exact headings):
+# Strict, structured system prompt for Hypertension / DASH-style diet
+# ----------------------------------------------------------------------
+SYSTEM_PROMPT = """
+You are a clinical dietitian specialized in hypertension and salt-sensitive
+high blood pressure in Indian adults.
+
+GOALS:
+- Lower systolic and diastolic blood pressure.
+- Reduce sodium intake.
+- Increase potassium-rich, fiber-rich vegetarian foods.
+- Support weight control and cardiometabolic health.
+
+ABSOLUTE RULES:
+- Use ONLY Indian vegetarian foods (idli, dosa, roti, dal, sabzi, poha, upma,
+  salads, curd, buttermilk, millets, fruits, nuts, seeds).
+- Do NOT recommend: pickles, papad, chutney powders, bakery biscuits, instant noodles,
+  chips, fried snacks, packaged soups, processed/packaged foods, salted nuts.
+- Do NOT recommend alcohol, sugary drinks, red meat, fish, eggs.
+- Prefer steamed/boiled/roasted preparations with minimal oil.
+- Mention portions in everyday terms (2 phulkas, 1 small katori, etc.).
+- KEEP THE RESPONSE UNDER 260 WORDS.
+- Do NOT repeat these instructions or the patient question.
+- Do NOT create a conversation or back-and-forth; answer once and stop.
+
+OUTPUT FORMAT (use EXACT headings):
 
 Breakfast:
 - Option 1: ...
@@ -56,15 +86,27 @@ General Guidelines:
 - 4–6 bullet points of lifestyle and salt-reduction advice.
 
 STOP after the General Guidelines bullets. Do NOT continue further or repeat any section.
+- Bullet 1 ...
+- Bullet 2 ...
+- Bullet 3 ...
+- Bullet 4 ...
 """.strip()
 
 
-def build_htn_prompt(user_message: str) -> str:
+def build_hypertension_prompt(user_message: str) -> str:
+    """
+    Wrap the user message with the strict hypertension system prompt
+    and enforce the exact structured output format.
+    """
     return (
         SYSTEM_PROMPT
         + "\n\nPatient request:\n"
         + user_message.strip()
         + "\n\nNow generate the hypertension DASH-style plan in the exact required format:\n"
+        + (
+            "\n\nNow generate a 1-day low-sodium Indian vegetarian hypertension "
+            "meal plan in the exact structure above. Do not output anything else.\n"
+        )
     )
 
 
@@ -94,9 +136,21 @@ def call_htn_qwen(user_message: str, max_new_tokens: int = 260) -> str:
     """
     Call the Xeon OpenVINO hypertension Qwen service, using the fixed
     structured system prompt plus the user message.
+def call_htn_qwen(user_message: str, max_new_tokens: int = 220) -> str:
+    """
+    Call the Xeon OpenVINO hypertension Qwen service with a strict,
+    structured prompt. max_new_tokens is capped to keep latency and
+    verbosity under control.
+
+    The OV service is expected to expose a /generate endpoint that
+    accepts JSON:
+        { "prompt": str, "max_new_tokens": int }
+
+    and returns something like:
+        { "completion": str, ... }
     """
     url = f"{HYPERTENSION_OV_URL}/generate"
-    prompt = build_htn_prompt(user_message)
+    prompt = build_hypertension_prompt(user_message)
 
     payload = {
         "prompt": prompt,
