@@ -1,9 +1,0 @@
-{
-  "use_habana_mixed_precision": true,
-  "hpu_graphs": false,
-  "bucket_size": 2,
-  "use_fused_adamw": true,
-  "use_fused_clip_norm": true,
-  "use_flash_attention": false,
-  "enable_hlga": false
-}
