@@ -100,3 +100,8 @@ _extras_not_in_git/
 *.log
 *.bak
 *.wkg
+
+# Scratch / editor backups
+*.bak
+*.wkg
+*~
