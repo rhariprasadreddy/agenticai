@@ -105,3 +105,14 @@ _extras_not_in_git/
 *.bak
 *.wkg
 *~
+
+# Local-only runtime / infra folders
+archive/
+eval/
+neo4j/
+rag-diabetes/
+kg-diabetes/
+venvs/
+models/
+*.tgz
+*.tar.gz
