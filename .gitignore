@@ -116,3 +116,7 @@ venvs/
 models/
 *.tgz
 *.tar.gz
+
+# --- scratch / backups (keep local only) ---
+inference/**/backups/
+archive/
