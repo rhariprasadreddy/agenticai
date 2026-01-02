@@ -1,122 +1,86 @@
-# Ignore model weights and large artifacts
-models/
-**/models/
-*.safetensors
-*.bin
-*.pt
-*.onnx
-*.xml
-*.bin
-*.pb
-*.h5
-
+# -----------------------------
 # Python noise
+# -----------------------------
 __pycache__/
 *.pyc
 .env
-.venv
+.venv/
+venvs/
 
-# ignore data files
-data/raw/
-data/**/raw/
-data/**/pdf
+# Editor/backup junk
+*.bak
+*.wkg
+*~
+
+# -----------------------------
+# Model weights / large artifacts
+# -----------------------------
+models/
+**/models/
+out/
+work/
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.onnx
+*.xml
+*.pb
+*.h5
+*.tgz
+*.tar.gz
+*.zip
+
+# -----------------------------
+# Data (keep local, never commit)
+# -----------------------------
 *.parquet
 *.csv
-rag/**/faiss_index/*
+*.db
+data/**/raw/
+data/**/pdf/
+data/**/curated/*.jsonl
+data/**/curated/*.parquet
+data/**/curated/*.csv
+data/**/curated/*.zip
+data/**/curated/*.tar.gz
+data/**/curated/*.tgz
+data/**/work/
+data/**/work/*.jsonl
+data/**/work/*.parquet
 
-# Local archives and snapshots
+# -----------------------------
+# RAG / KG / DB runtime artifacts
+# -----------------------------
+rag/**
+rag-diabetes/
+kg-*/
+kg-diabetes/
+neo4j/**
+
+# -----------------------------
+# Local archives / snapshots / eval
+# -----------------------------
 archive/
-modules/Orchestrator/app/archive/
-inference/diabetes_qwen_ov/backups/
+eval/
+*_backup_*/
+*_xeon_backup_*/
+agenticai-repo/
+_extras_not_in_git/
 
-# Local JSON logs/configs not meant for Git
+# -----------------------------
+# Inference scratch
+# -----------------------------
+inference/**/backups/
+
+# -----------------------------
+# Local JSON configs not meant for Git
+# -----------------------------
 diabeticschat.json
 gateway-profile.json
 profile-orch.json
 
 # -----------------------------
-# Local backups / duplicates
+# Logs
 # -----------------------------
-*_backup_*/
-agenticai-repo/
-*_xeon_backup_*/
-_extras_not_in_git/
-
-# -----------------------------
-# Datasets + raw sources (keep local, never commit)
-# -----------------------------
-data/**/raw/
-data/**/curated/*.jsonl
-data/**/curated/*.parquet
-data/**/curated/*.csv
-data/**/curated/*.zip
-data/**/curated/*.tar.gz
-data/**/curated/*.tgz
-data/**/work/*.jsonl
-data/**/work/*.parquet
-
-# -----------------------------
-# RAG + KG runtime artifacts
-# -----------------------------
-rag/**
-kg-*/
-neo4j/**
-*.db
-
-# -----------------------------
-# Env/runtime
-# -----------------------------
-venvs/
 *.log
-*.bak
-*.wkg
-
-# -----------------------------
-# Datasets + raw sources (never commit)
-# -----------------------------
-data/**/raw/
-data/**/curated/*.jsonl
-data/**/curated/*.parquet
-data/**/curated/*.csv
-data/**/curated/*.zip
-data/**/curated/*.tar.gz
-data/**/curated/*.tgz
-data/**/work/*.jsonl
-data/**/work/*.parquet
-
-# -----------------------------
-# RAG + KG runtime artifacts
-# -----------------------------
-rag/**
-kg-*/
-neo4j/**
-*.db
-
-# -----------------------------
-# Local backups / scratch
-# -----------------------------
-*_backup_*/
-_extras_not_in_git/
-*.log
-*.bak
-*.wkg
-
-# Scratch / editor backups
-*.bak
-*.wkg
-*~
-
-# Local-only runtime / infra folders
-archive/
-eval/
-neo4j/
-rag-diabetes/
-kg-diabetes/
-venvs/
-models/
-*.tgz
-*.tar.gz
-
-# --- scratch / backups (keep local only) ---
-inference/**/backups/
-archive/
