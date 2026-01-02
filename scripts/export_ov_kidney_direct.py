@@ -20,11 +20,11 @@ from transformers import AutoTokenizer
 
 HF_MERGED_DIR = os.getenv(
     "KIDNEY_HF_DIR",
-    "/home/agenticai/agenticai/models/qwen2.5-1.5b-kidney-merged",
+    str((Path(__file__).resolve().parents[1] / "models" / "qwen2.5-1.5b-kidney-merged",
 )
 OV_OUT_DIR = os.getenv(
     "KIDNEY_OV_DIR",
-    "/home/agenticai/agenticai/models/qwen2.5-1.5b-kidney-ov",
+    str((Path(__file__).resolve().parents[1] / "models" / "qwen2.5-1.5b-kidney-ov",
 )
 
 hf_dir = Path(HF_MERGED_DIR)

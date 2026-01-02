@@ -11,7 +11,7 @@ from transformers import AutoTokenizer
 #   /home/agenticai/agenticai/models/qwen2.5-1.5b-kidney-ov
 # ---------------------------------------------------------------------
 
-ROOT = Path("/home/agenticai/agenticai")
+ROOT = Path(__file__).resolve().parents[1]
 OV_DIR = ROOT / "models" / "qwen2.5-1.5b-kidney-ov"
 
 print("🔹 Loading OV BF16 Kidney model from:", OV_DIR)
