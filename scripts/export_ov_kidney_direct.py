@@ -17,14 +17,16 @@ from pathlib import Path
 from optimum.intel.openvino import OVModelForCausalLM
 from transformers import AutoTokenizer
 
+ROOT = Path(__file__).resolve().parents[1]
 
 HF_MERGED_DIR = os.getenv(
     "KIDNEY_HF_DIR",
-    str((Path(__file__).resolve().parents[1] / "models" / "qwen2.5-1.5b-kidney-merged",
+    str(ROOT / "models" / "qwen2.5-1.5b-kidney-merged"),
 )
+
 OV_OUT_DIR = os.getenv(
     "KIDNEY_OV_DIR",
-    str((Path(__file__).resolve().parents[1] / "models" / "qwen2.5-1.5b-kidney-ov",
+    str(ROOT / "models" / "qwen2.5-1.5b-kidney-ov"),
 )
 
 hf_dir = Path(HF_MERGED_DIR)

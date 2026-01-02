@@ -6,11 +6,13 @@ import numpy as np
 from openvino import Core
 from transformers import AutoTokenizer, AutoConfig
 
-PROMPTS = ROOT / "eval/prompts_hypertension.txt")
-OUT = ROOT / "eval/ov_htn_outputs.jsonl")
+ROOT = Path(__file__).resolve().parents[1]
 
-MERGED_DIR = ROOT / "models/hypertension_qwen_merged_fp16")
-OV_DIR     = Path("/home/agenticai/models/hypertension_qwen_ov")
+PROMPTS = ROOT / "eval" / "prompts_hypertension.txt"
+OUT     = ROOT / "eval" / "ov_htn_outputs.jsonl"
+
+MERGED_DIR = ROOT / "models" / "hypertension_qwen_merged_fp16"
+OV_DIR     = ROOT / "models" / "hypertension_qwen_ov"
 
 def load_prompts(path: Path):
     prompts = []
