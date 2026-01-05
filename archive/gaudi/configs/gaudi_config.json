@@ -1,8 +1,0 @@
-{
-  "use_habana": true,
-  "gaudi_dtypes": "bf16",
-  "use_fused_adam": true,
-  "use_fast_kernels": true,
-  "habana_graphs": false
-}
-

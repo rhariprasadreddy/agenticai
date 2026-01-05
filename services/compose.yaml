@@ -1,0 +1,75 @@
+services:
+  rag-diabetes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: rag-diabetes
+    restart: unless-stopped
+    working_dir: /app/rag-diabetes
+    command: >
+      sh -lc "uvicorn rag_diabetes_service:app --host 0.0.0.0 --port 9101"
+    ports:
+      - "9101:9101"
+    environment:
+      RAG_DB_PATH: /data/diabetes_docs.db
+      RAG_EMB_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      RAG_TOP_K: "5"
+    volumes:
+      - ./rag-diabetes:/data
+
+  rag-hypertension:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: rag-hypertension
+    restart: unless-stopped
+    working_dir: /app/rag-hypertension
+    command: >
+      sh -lc "uvicorn rag_hypertension_service:app --host 0.0.0.0 --port 9103"
+    ports:
+      - "9103:9103"
+    environment:
+      RAG_DB_PATH: /data/hypertension_docs.db
+      RAG_EMB_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      RAG_TOP_K: "5"
+    volumes:
+      - ./rag-hypertension:/data
+
+  rag-kidney:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: rag-kidney
+    restart: unless-stopped
+    working_dir: /app/rag-kidney
+    command: >
+      sh -lc "uvicorn rag_kidney_service:app --host 0.0.0.0 --port 9104"
+    ports:
+      - "9104:9104"
+    environment:
+      RAG_DB_PATH: /data/kidney_docs.db
+      RAG_EMB_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      RAG_TOP_K: "5"
+    volumes:
+      - ./rag-kidney:/data
+
+  kg-diabetes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: kg-diabetes
+    restart: unless-stopped
+    working_dir: /app/kg-diabetes
+    command: >
+      sh -lc "uvicorn kg_diabetes_service:app --host 0.0.0.0 --port 9201"
+    ports:
+      - "9201:9201"
+    environment:
+      DIAB_NEO4J_URI: bolt://192.168.2.69:7687
+      DIAB_NEO4J_USER: neo4j
+      DIAB_NEO4J_PASSWORD: neo4j123
+

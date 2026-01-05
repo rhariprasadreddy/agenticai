@@ -110,3 +110,44 @@ data/**/notes/
 eval/
 *.log
 
+
+# -----------------------------
+# Datasets + raw sources (never commit)
+# -----------------------------
+data/**/raw/
+data/**/curated/*.jsonl
+data/**/curated/*.parquet
+data/**/curated/*.csv
+data/**/curated/*.zip
+data/**/curated/*.tar.gz
+data/**/curated/*.tgz
+data/**/work/*.jsonl
+data/**/work/*.parquet
+
+# -----------------------------
+# RAG + KG runtime artifacts
+# -----------------------------
+rag/**
+kg-*/
+neo4j/**
+*.db
+
+# -----------------------------
+# Local backups / scratch
+# -----------------------------
+*_backup_*/
+_extras_not_in_git/
+*.log
+*.bak
+*.wkg
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.log
+
+# Local DB / indexes (keep or track intentionally)
+services/**/.venv/
+services/**/rag_*.log
