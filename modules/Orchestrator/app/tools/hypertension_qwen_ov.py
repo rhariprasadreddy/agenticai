@@ -1,167 +1,393 @@
+#!/usr/bin/env python3
 # app/tools/hypertension_qwen_ov.py
-import os
-import requests
-
-# OV service endpoint for hypertension model (Xeon inference server)
 
 import os
+import re
+import logging
+from typing import Optional, List, Dict
+
 import requests
 
-# OV service endpoint for hypertension model (running on Xeon inference server)
-HYPERTENSION_OV_URL = os.getenv(
-    "HYPERTENSION_OV_URL",
-    "http://192.168.2.69:8082",
+logger = logging.getLogger(__name__)
+
+# ----------------------------------------------------------------------
+# Xeon inference server HTN service
+# ----------------------------------------------------------------------
+HTN_QWEN_OV_URL = os.getenv(
+    "HTN_QWEN_OV_URL",
+    "http://192.168.2.69:9007",  # adjust if your HTN OV endpoint differs
+)
+HTN_HTTP_TIMEOUT = float(os.getenv("HTN_HTTP_TIMEOUT", "15.0"))
+HTN_MAX_NEW_TOKENS = int(os.getenv("HTN_MAX_NEW_TOKENS", "220"))
+
+# ----------------------------------------------------------------------
+# Simple HTN intent detector
+# ----------------------------------------------------------------------
+_HTN_PAT = re.compile(
+    r"\b(hypertension|high\s*blood\s*pressure|bp\s*\d+\/\d+|"
+    r"systolic|diastolic|dah?sh|low[\s-]?salt|sodium)\b",
+    flags=re.IGNORECASE,
 )
 
+
+def is_hypertension_query(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    return bool(_HTN_PAT.search(text))
+
+
 # ----------------------------------------------------------------------
-# Structured system prompt for hypertension / DASH diet
-# Lipids-style layout (Breakfast/Lunch/etc.)
+# Output cleanup / extraction helpers
 # ----------------------------------------------------------------------
-SYSTEM_PROMPT = """
-You are a clinical diet specialist focused exclusively on hypertension (high blood pressure)
-and cardiometabolic risk in Indian adults.
+_SECTION_ORDER = [
+    "Breakfast",
+    "Mid-morning snack",
+    "Lunch",
+    "Evening snack",
+    "Dinner",
+    "General Guidelines",
+]
 
-STRICT RULES:
-- Base all advice ONLY on the DASH (Dietary Approaches to Stop Hypertension) principles.
-- Prefer Indian vegetarian foods:
-  dal, sabzi, roti, idli, dosa, sambar, upma, poha, curd, buttermilk, millets, fruits, salads.
-- Strongly restrict:
-  sodium, pickles, papad, fried snacks, processed foods, bakery items, restaurant foods,
-  instant noodles, salted namkeens, preserved meats.
-- Keep response UNDER 300 words.
-- Do NOT ask follow-up questions.
-- Do NOT start a dialogue; respond only once.
-- Do NOT repeat the “Patient request” text.
-- Do NOT add any sections beyond the ones listed below.
-- Output MUST strictly follow the exact headings and bullet structure below.
+_HDR_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\*\*|\*)?\s*"
+    r"(Breakfast|Mid-morning snack|Lunch|Evening snack|Dinner|General Guidelines)"
+    r"\s*:\s*(?:\*\*|\*)?\s*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
 
-OUTPUT FORMAT (exact headings):
-# Strict, structured system prompt for Hypertension / DASH-style diet
-# ----------------------------------------------------------------------
-SYSTEM_PROMPT = """
-You are a clinical dietitian specialized in hypertension and salt-sensitive
-high blood pressure in Indian adults.
-
-GOALS:
-- Lower systolic and diastolic blood pressure.
-- Reduce sodium intake.
-- Increase potassium-rich, fiber-rich vegetarian foods.
-- Support weight control and cardiometabolic health.
-
-ABSOLUTE RULES:
-- Use ONLY Indian vegetarian foods (idli, dosa, roti, dal, sabzi, poha, upma,
-  salads, curd, buttermilk, millets, fruits, nuts, seeds).
-- Do NOT recommend: pickles, papad, chutney powders, bakery biscuits, instant noodles,
-  chips, fried snacks, packaged soups, processed/packaged foods, salted nuts.
-- Do NOT recommend alcohol, sugary drinks, red meat, fish, eggs.
-- Prefer steamed/boiled/roasted preparations with minimal oil.
-- Mention portions in everyday terms (2 phulkas, 1 small katori, etc.).
-- KEEP THE RESPONSE UNDER 260 WORDS.
-- Do NOT repeat these instructions or the patient question.
-- Do NOT create a conversation or back-and-forth; answer once and stop.
-
-OUTPUT FORMAT (use EXACT headings):
-
-Breakfast:
-- Option 1: ...
-- Option 2: ...
-
-Mid-morning snack:
-- Option 1: ...
-- Option 2: ...
-
-Lunch:
-- Option 1: ...
-- Option 2: ...
-
-Evening snack:
-- Option 1: ...
-- Option 2: ...
-
-Dinner:
-- Option 1: ...
-- Option 2: ...
-
-General Guidelines:
-- 4–6 bullet points of lifestyle and salt-reduction advice.
-
-STOP after the General Guidelines bullets. Do NOT continue further or repeat any section.
-- Bullet 1 ...
-- Bullet 2 ...
-- Bullet 3 ...
-- Bullet 4 ...
-""".strip()
+_LEAK_MARKERS = [
+    "you are a",
+    "system:",
+    "assistant:",
+    "user:",
+    "output format",
+    "strict rules",
+    "do not repeat",
+    "generate a",
+    "keep the response",
+    "max_new_tokens",
+    "dietitian",
+    "instructions",
+    "response must be",
+    "patient request",
+    "extra notes:",
+    "comorbidities:",
+    "age:",
+    "sex:",
+]
 
 
-def build_hypertension_prompt(user_message: str) -> str:
+def _strip_prompt_leaks(text: str) -> str:
     """
-    Wrap the user message with the strict hypertension system prompt
-    and enforce the exact structured output format.
+    Remove obvious instruction/prompt leakage lines.
+    Keeps the actual meal plan content.
+    """
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    cleaned: List[str] = []
+    for ln in lines:
+        low = ln.strip().lower()
+
+        # drop leading empties
+        if not cleaned and not low:
+            continue
+
+        if any(m in low for m in _LEAK_MARKERS):
+            continue
+
+        cleaned.append(ln)
+
+    return "\n".join(cleaned).strip()
+
+
+def _strip_preamble(raw: str) -> str:
+    """
+    If we find a meal heading, drop everything before it.
+    """
+    if not raw:
+        return ""
+    s = raw.strip()
+
+    m = re.search(r"(?im)^(#+\s*)?(breakfast|mid[-\s]?morning snack|lunch|evening snack|dinner)\s*:", s)
+    if m:
+        s = s[m.start():].lstrip()
+
+    return s.strip()
+
+
+def _parse_sections(text: str) -> Dict[str, str]:
+    """
+    Parse semi-structured text into our expected sections.
+    If headings are missing, everything goes into breakfast (then fallbacks fill rest).
+    """
+    out = {k.lower(): "" for k in _SECTION_ORDER}
+    if not text:
+        return out
+
+    s = re.sub(r"(?im)^#+\s*", "", text).strip()
+
+    cur = None
+    buf: List[str] = []
+
+    def flush():
+        nonlocal cur, buf
+        if cur is not None:
+            out[cur] = "\n".join(buf).strip()
+        buf = []
+
+    for ln in s.splitlines():
+        t = ln.strip()
+        m = re.match(
+            r"(?im)^(breakfast|mid[-\s]?morning snack|lunch|evening snack|dinner|general guidelines?)\s*:\s*$",
+            t,
+        )
+        if m:
+            flush()
+            name = m.group(1).lower()
+            name = name.replace("mid morning", "mid-morning").replace("mid  morning", "mid-morning")
+            name = name.replace("mid-morning", "mid-morning snack")
+            if name.startswith("general"):
+                name = "general guidelines"
+            cur = name
+            continue
+
+        # accept normal lines
+        if cur is None:
+            cur = "breakfast"
+        buf.append(ln)
+
+    flush()
+    return out
+
+
+def _pick_bullets(block: str, max_items: int = 2) -> List[str]:
+    """
+    Extract up to N bullet-ish lines.
+    If no bullets, salvage non-empty lines.
+    Returns items WITHOUT forcing "Option X:".
+    """
+    if not block:
+        return []
+
+    picked: List[str] = []
+
+    for ln in block.splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+
+        # bullet-ish
+        if s.startswith(("-", "•", "*")):
+            s = s.lstrip("*•").strip()
+            s = s.lstrip("-").strip()
+
+        # remove "Option X:" if present
+        s = re.sub(r"(?i)^\s*option\s*[a-z0-9]+\s*:\s*", "", s).strip()
+        if not s:
+            continue
+
+        picked.append(s)
+        if len(picked) >= max_items:
+            break
+
+    # salvage if we still have nothing
+    if not picked:
+        for ln in block.splitlines():
+            s = ln.strip()
+            if not s:
+                continue
+            s = re.sub(r"(?i)^\s*option\s*[a-z0-9]+\s*:\s*", "", s).strip()
+            if s:
+                picked.append(s)
+            if len(picked) >= max_items:
+                break
+
+    return picked[:max_items]
+
+
+def _drop_noisy_guidelines(g: List[str]) -> List[str]:
+    """
+    Remove generic / irrelevant guidelines (e.g., alcohol limits, men/women dosing, etc.).
+    """
+    bad = ("alcohol", "women", "men", "one drink", "two drinks")
+    out: List[str] = []
+    for b in g:
+        if any(x in b.lower() for x in bad):
+            continue
+        out.append(b)
+    return out
+
+
+def _normalize_to_standard_format(raw_plan: str) -> str:
+    """
+    Enforce:
+      - exact 2 options per meal section
+      - clean headings and leakage removal
+      - sodium target + blocklist in guidelines
+    """
+    txt = _strip_preamble(_strip_prompt_leaks(raw_plan))
+    sec = _parse_sections(txt)
+
+    b = _pick_bullets(sec["breakfast"], 2)
+    mid = _pick_bullets(sec["mid-morning snack"], 2)
+    l = _pick_bullets(sec["lunch"], 2)
+    eve = _pick_bullets(sec["evening snack"], 2)
+    d = _pick_bullets(sec["dinner"], 2)
+
+    g = _pick_bullets(sec["general guidelines"], 10)
+    g = _drop_noisy_guidelines(g)
+
+    # ---- Force exactly 2 options with deterministic fallbacks ----
+    if len(b) < 2:
+        b = (b + [
+            "Vegetable oats upma + mint/coriander chutney (no added salt).",
+            "2 idli + sambar (low salt) + coconut chutney (small).",
+        ])[:2]
+
+    if len(mid) < 2:
+        mid = (mid + [
+            "Fruit (guava/orange) + 6–8 unsalted almonds.",
+            "Unsalted makhana (small handful) + lemon water.",
+        ])[:2]
+
+    if len(l) < 2:
+        l = (l + [
+            "2 phulka + mixed veg sabzi + dal (measured, low salt).",
+            "Brown rice (1 cup) + sambar (less salt/oil) + cucumber salad.",
+        ])[:2]
+
+    if len(eve) < 2:
+        eve = (eve + [
+            "Buttermilk (unsalted) + roasted chana (unsalted, small).",
+            "Sprouts chaat (no sev, low salt) + green tea.",
+        ])[:2]
+
+    if len(d) < 2:
+        d = (d + [
+            "Vegetable khichdi (moong dal + rice, low salt) + salad.",
+            "2 phulka + lauki/tinda curry + curd (small bowl).",
+        ])[:2]
+
+    # ---- Guidelines: inject sodium target + blocklist always ----
+    must_have = [
+        "Aim ~1500–2000 mg sodium/day (or per your clinician).",
+        "Strictly avoid/limit: pickles, papad, namkeen, instant soups/noodles, packaged sauces/masalas, bakery/processed foods, restaurant gravies.",
+        "Flavor with lemon, herbs, garlic, jeera, pepper instead of salt.",
+        "Prefer DASH plate: more fruits/veg/whole grains; moderate low-fat dairy if tolerated.",
+        "If on BP meds or kidney issues, confirm potassium intake with your clinician.",
+    ]
+
+    # keep model guidelines, but ensure our must_have are included
+    final_g: List[str] = []
+    seen = set()
+
+    def add_line(x: str):
+        k = x.strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            final_g.append(x.strip())
+
+    for x in must_have:
+        add_line(x)
+
+    for x in g:
+        # avoid repeating blocklist/alcohol noise; keep short meaningful ones
+        if any(z in x.lower() for z in ("alcohol", "women", "men", "one drink", "two drinks")):
+            continue
+        add_line(x)
+
+    # keep 4–6 bullets max
+    final_g = final_g[:6]
+
+    # ---- Compose final response in your standard format ----
+    out: List[str] = []
+    out.append("Breakfast:")
+    out.append(f"- Option 1: {b[0]}")
+    out.append(f"- Option 2: {b[1]}")
+
+    out.append("\nMid-morning snack:")
+    out.append(f"- Option 1: {mid[0]}")
+    out.append(f"- Option 2: {mid[1]}")
+
+    out.append("\nLunch:")
+    out.append(f"- Option 1: {l[0]}")
+    out.append(f"- Option 2: {l[1]}")
+
+    out.append("\nEvening snack:")
+    out.append(f"- Option 1: {eve[0]}")
+    out.append(f"- Option 2: {eve[1]}")
+
+    out.append("\nDinner:")
+    out.append(f"- Option 1: {d[0]}")
+    out.append(f"- Option 2: {d[1]}")
+
+    out.append("\nGeneral Guidelines:")
+    for x in final_g:
+        out.append(f"- {x}")
+
+    return "\n".join(out).strip()
+
+
+def _fallback_plan(_: str) -> str:
+    """
+    Deterministic fallback (always strict-low-salt, Indian veg).
     """
     return (
-        SYSTEM_PROMPT
-        + "\n\nPatient request:\n"
-        + user_message.strip()
-        + "\n\nNow generate the hypertension DASH-style plan in the exact required format:\n"
-        + (
-            "\n\nNow generate a 1-day low-sodium Indian vegetarian hypertension "
-            "meal plan in the exact structure above. Do not output anything else.\n"
-        )
-    )
+        "Breakfast:\n"
+        "- Option 1: Vegetable oats upma + mint/coriander chutney (no added salt).\n"
+        "- Option 2: 2 idli + sambar (low salt) + coconut chutney (small).\n\n"
+        "Mid-morning snack:\n"
+        "- Option 1: Fruit (guava/orange) + 6–8 unsalted almonds.\n"
+        "- Option 2: Unsalted makhana (small handful) + lemon water.\n\n"
+        "Lunch:\n"
+        "- Option 1: 2 phulka + mixed veg sabzi + dal (measured, low salt).\n"
+        "- Option 2: Brown rice (1 cup) + sambar (less salt/oil) + cucumber salad.\n\n"
+        "Evening snack:\n"
+        "- Option 1: Buttermilk (unsalted) + roasted chana (unsalted, small).\n"
+        "- Option 2: Sprouts chaat (no sev, low salt) + green tea.\n\n"
+        "Dinner:\n"
+        "- Option 1: Vegetable khichdi (moong dal + rice, low salt) + salad.\n"
+        "- Option 2: 2 phulka + lauki/tinda curry + curd (small bowl).\n\n"
+        "General Guidelines:\n"
+        "- Aim ~1500–2000 mg sodium/day (or per your clinician).\n"
+        "- Strictly avoid/limit: pickles, papad, namkeen, instant soups/noodles, packaged sauces/masalas, bakery/processed foods, restaurant gravies.\n"
+        "- Flavor with lemon, herbs, garlic, jeera, pepper instead of salt.\n"
+        "- Prefer DASH plate: more fruits/veg/whole grains; moderate low-fat dairy if tolerated.\n"
+        "- If on BP meds or kidney issues, confirm potassium intake with your clinician.\n"
+    ).strip()
 
 
-def is_hypertension_query(text: str) -> bool:
+# ----------------------------------------------------------------------
+# HTTP call into HTN OV service + normalization
+# ----------------------------------------------------------------------
+def call_htn_qwen(user_message: str, timeout: float = HTN_HTTP_TIMEOUT) -> str:
     """
-    Simple heuristic router for hypertension / blood pressure topics.
-    If any of these keywords appear, route to the hypertension agent.
+    Call HTN model server and normalize response into standard 6-section format.
     """
-    t = text.lower()
-    keywords = [
-        "hypertension",
-        "high blood pressure",
-        "blood pressure",
-        "bp ",
-        " bp",
-        "high bp",
-        "htn",
-        "systolic",
-        "diastolic",
-        "dash diet",
-        "dash-style",
-    ]
-    return any(k in t for k in keywords)
-
-
-def call_htn_qwen(user_message: str, max_new_tokens: int = 260) -> str:
-    """
-    Call the Xeon OpenVINO hypertension Qwen service, using the fixed
-    structured system prompt plus the user message.
-def call_htn_qwen(user_message: str, max_new_tokens: int = 220) -> str:
-    """
-    Call the Xeon OpenVINO hypertension Qwen service with a strict,
-    structured prompt. max_new_tokens is capped to keep latency and
-    verbosity under control.
-
-    The OV service is expected to expose a /generate endpoint that
-    accepts JSON:
-        { "prompt": str, "max_new_tokens": int }
-
-    and returns something like:
-        { "completion": str, ... }
-    """
-    url = f"{HYPERTENSION_OV_URL}/generate"
-    prompt = build_hypertension_prompt(user_message)
-
+    # If your HTN OV service expects /generate like kidney, keep this.
     payload = {
-        "prompt": prompt,
-        "max_new_tokens": max_new_tokens,
+        "prompt": (
+            "You are a hypertension dietitian.\n"
+            "Return a strict low-salt Indian vegetarian 1-day plan.\n"
+            "Format strictly with headings: Breakfast, Mid-morning snack, Lunch, Evening snack, Dinner, General Guidelines.\n"
+            "Each meal must have exactly 2 options, each option one line.\n"
+            "Guidelines: include sodium target and avoid/limit list.\n\n"
+            f"User: {user_message}\n"
+        ),
+        "max_new_tokens": HTN_MAX_NEW_TOKENS,
     }
 
     try:
-        r = requests.post(url, json=payload, timeout=60)
+        r = requests.post(f"{HTN_QWEN_OV_URL}/generate", json=payload, timeout=timeout)
         r.raise_for_status()
-        data = r.json()
-        return (data.get("completion") or data.get("text", "")).strip()
-    except Exception as e:
-        return f"[Hypertension Qwen OV error: {e}]"
+        data = r.json() or {}
+        raw = (data.get("output") or data.get("text") or data.get("completion") or "").strip()
 
+        cleaned = _normalize_to_standard_format(raw)
+        return cleaned if cleaned else _fallback_plan(user_message)
+
+    except Exception:
+        logger.exception("Hypertension Qwen OV error")
+        return _fallback_plan(user_message)
