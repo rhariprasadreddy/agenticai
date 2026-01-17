@@ -1,41 +1,42 @@
 services:
   rag-diabetes:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: mcp-rag:latest
     container_name: rag-diabetes
     restart: unless-stopped
-    working_dir: /app/rag-diabetes
-    command: >
-      sh -lc "uvicorn rag_diabetes_service:app --host 0.0.0.0 --port 9101"
+    # 1. Set working directory to where we mount the code
+    working_dir: /app
     ports:
       - "9101:9101"
     environment:
-      RAG_DB_PATH: /data/diabetes_docs.db
+      # DB path can stay in /data or move to /app, let's keep it simple
+      RAG_DB_PATH: /app/diabetes_docs.db
       RAG_EMB_MODEL: sentence-transformers/all-MiniLM-L6-v2
       RAG_TOP_K: "5"
     volumes:
-      - ./rag-diabetes:/data
+      # MOUNT CODE: Map local folder to /app so python finds the file
+      - ./rag-diabetes:/app
+      # MOUNT DATA: Map the processed guidelines for Singapore/US context
+      - ../data/processed_rag/diabetes_guidelines.txt:/app/diabetes_guidelines.txt
+    # Command must be properly indented
+    command: >
+      sh -lc "uvicorn rag_diabetes_service:app --host 0.0.0.0 --port 9101"
 
   rag-hypertension:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: mcp-rag:latest
     container_name: rag-hypertension
     restart: unless-stopped
-    working_dir: /app/rag-hypertension
-    command: >
-      sh -lc "uvicorn rag_hypertension_service:app --host 0.0.0.0 --port 9103"
+    working_dir: /app
     ports:
       - "9103:9103"
     environment:
-      RAG_DB_PATH: /data/hypertension_docs.db
+      RAG_DB_PATH: /app/hypertension_docs.db
       RAG_EMB_MODEL: sentence-transformers/all-MiniLM-L6-v2
       RAG_TOP_K: "5"
     volumes:
-      - ./rag-hypertension:/data
+      - ./rag-hypertension:/app
+      - ../data/processed_rag/hypertension_guidelines.txt:/app/hypertension_guidelines.txt
+    command: >
+      sh -lc "uvicorn rag_hypertension_service:app --host 0.0.0.0 --port 9103"
 
   rag-kidney:
     build:
@@ -55,6 +56,26 @@ services:
       RAG_TOP_K: "5"
     volumes:
       - ./rag-kidney:/data
+  
+  rag-lipids:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: rag-lipids
+    restart: unless-stopped
+    working_dir: /app/rag-lipids
+    command: >
+      sh -lc "uvicorn rag_lipids_service:app --host 0.0.0.0 --port 9102"
+    ports:
+      - "9102:9102"
+    environment:
+      RAG_DB_PATH: /data/lipids_docs.db
+      RAG_EMB_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      RAG_TOP_K: "5"
+    volumes:
+      - ./rag-lipids:/data
+      - ./rag-lipids:/app/rag-lipids
 
   kg-diabetes:
     build:
@@ -69,7 +90,67 @@ services:
     ports:
       - "9201:9201"
     environment:
-      DIAB_NEO4J_URI: bolt://192.168.2.69:7687
-      DIAB_NEO4J_USER: neo4j
-      DIAB_NEO4J_PASSWORD: neo4j123
+      # FIX: Changed DIAB_NEO4J_... to NEO4J_... to match your other apps
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
 
+  kg-hypertension:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: kg-hypertension
+    restart: unless-stopped
+    working_dir: /app/kg-htn
+    volumes:
+      - ./kg-htn:/app/kg-htn
+    command: >
+      sh -lc "uvicorn kg_htn_service:app --host 0.0.0.0 --port 9202"
+    ports:
+      - "9202:9202"
+    environment:
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+
+  
+  kg-lipids:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: kg-lipids
+    restart: unless-stopped
+    working_dir: /app/kg-lipids
+    volumes:
+      - ./kg-lipids:/app/kg-lipids
+    command: >
+      sh -lc "uvicorn kg_lipids_service:app --host 0.0.0.0 --port 9203"
+    ports:
+      - "9203:9203"
+    environment:
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+
+  kg-kidney:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-rag:latest
+    container_name: kg-kidney
+    restart: unless-stopped
+    working_dir: /app/kg-kidney
+    volumes:
+      - ./kg-kidney:/app/kg-kidney
+    command: >
+      sh -lc "uvicorn kg_kidney_service:app --host 0.0.0.0 --port 9204"
+    ports:
+      - "9204:9204"
+    environment:
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+
+  

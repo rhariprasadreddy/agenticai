@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # ==== 1. Diabetes Agent (Port 8080) ====
+  diabetes:
+    container_name: agent-diabetes
+    image: diabetes-qwen-ov:optimum
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      # Verified Code Path
+      - ./inference/diabetes_qwen_ov/ov_diabetes_service.py:/app/main.py
+      # Standardized Model Path
+      - ./models/openvino/diabetes/fp16:/model
+    environment:
+      - MODEL_DIR=/model
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    command: uvicorn main:app --host 0.0.0.0 --port 8080
+
+  # ==== 2. Hypertension Agent (Port 8082) ====
+  # ==== 2. Hypertension Agent ====
+  hypertension:
+    container_name: agent-hypertension
+    # OLD: image: hypertension-qwen-ov:latest  <-- DELETE THIS LINE
+    image: diabetes-qwen-ov:optimum           # <-- USE THIS (It has the 'optimum' library)
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./inference/hypertension_qwen_ov/ov_hypertension_service.py:/app/main.py
+      - ./models/openvino/hypertension/fp16:/model
+    environment:
+      - MODEL_DIR=/model
+      - PORT=8082
+      - MAX_NEW_TOKENS=256
+    ports:
+      - "8082:8082"
+    command: uvicorn main:app --host 0.0.0.0 --port 8082
+    
+  # ==== 3. Kidney Agent (Port 9008) ====
+  kidney:
+    container_name: agent-kidney
+    image: kidney-qwen-ov:latest
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      # Verified Code Path
+      - ./inference/kidney_qwen_ov/ov_kidney_service.py:/app/main.py
+      # Standardized Model Path
+      - ./models/openvino/kidney/fp16:/model
+    environment:
+      - MODEL_DIR=/model
+      - PORT=9008
+    ports:
+      - "9008:9008"
+    command: uvicorn main:app --host 0.0.0.0 --port 9008
+
+  # ==== 4. Lipids Agent (Port 9006) ====
+  lipids:
+    container_name: agent-lipids
+    image: lipids-ov-service:latest
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      # Verified Code Path
+      - ./inference/lipids_qwen_ov/ov_lipids_service.py:/app/main.py
+      # Standardized Model Path
+      - ./models/openvino/lipids/fp16:/model
+    environment:
+      - MODEL_DIR=/model
+      - PORT=9006
+    ports:
+      - "9006:9006"
+    command: uvicorn main:app --host 0.0.0.0 --port 9006

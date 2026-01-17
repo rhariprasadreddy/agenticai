@@ -75,7 +75,7 @@ def _is_suspicious_doc(doc: dict) -> bool:
     if "canary" in tags_l:
         return True
     # Optional: only allow trusted sources
-    if source and source not in ("internal guideline", "internal"):
+    if source and source not in ("internal guideline", "internal", "healthhub/icmr"):
         return True
     return False
 
@@ -183,7 +183,7 @@ def healthz():
 @app.post("/v1/hypertension/index")
 def index_docs(req: IndexRequest):
     """
-    Ingest or upsert docs into the diabetes RAG store.
+    Ingest or upsert docs into the Hypertension RAG store.
     For now we simply overwrite rows with same id and rebuild the FAISS index.
     """
     conn = get_db()
@@ -226,14 +226,14 @@ def _is_suspicious_doc(doc) -> bool:
         return True
     if "canary" in tags_l:
         return True
-    if source and source not in ("internal guideline", "internal"):
+    if source and source not in ("internal guideline", "internal", "healthhub/icmr"):
         return True
     return False
 
 @app.post("/v1/hypertension/search", response_model=SearchResponse)
 def search_docs(req: SearchRequest):
     """
-    Vector search over diabetes docs using FAISS.
+    Vector search over hypertension docs using FAISS.
     """
     if faiss_index is None or not getattr(app.state, "docs_cache", None):
         return SearchResponse(hits=[])
