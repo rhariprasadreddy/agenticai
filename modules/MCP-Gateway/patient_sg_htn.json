@@ -1,0 +1,4 @@
+{
+  "message": "GENERATE_CLINICAL_REPORT: Patient has High Blood Pressure (150/95). Generate a strict DASH diet plan.\n\nPATIENT PROFILE:\n- Location: Singapore\n- Ailments: Hypertension (Stage 2)\n- Preferences: Hawker food, likes soup dishes",
+  "stream": false
+}

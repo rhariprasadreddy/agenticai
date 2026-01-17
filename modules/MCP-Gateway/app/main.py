@@ -47,7 +47,7 @@ async def chat(req: ChatRequest, _api=Depends(require_api_key)):
     """
     url = f"{ORCH_URL}/chat"
     try:
-        timeout = httpx.Timeout(60.0, connect=5.0)
+        timeout = httpx.Timeout(180.0, connect=5.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=req.dict())
         resp.raise_for_status()

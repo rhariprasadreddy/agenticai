@@ -1,0 +1,4 @@
+{
+  "message": "GENERATE_CLINICAL_REPORT: Based on the following patient profile, analyze the ailments and generate a strict 6-month diet plan.\n\nPATIENT PROFILE:\n- Age: 50\n- Gender: Female\n- Ailments: Type 2 Diabetes\n- Location: India (Prefer Vegetarian)",
+  "stream": false
+}

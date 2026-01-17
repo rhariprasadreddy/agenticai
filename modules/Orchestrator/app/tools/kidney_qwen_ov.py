@@ -1,365 +1,215 @@
 #!/usr/bin/env python3
 """
 app/tools/kidney_qwen_ov.py
-
-Kidney (CKD) specialist agent integrating:
-- Strict renal diet system prompt (India-focused)
-- RAG evidence from Kidney FAISS service (optional)
-
-Used by the MCP Orchestrator router.
+Kidney Agent (Renal Specialist) - Region-Aware & Universal Key Patch
 """
-
 import os
-import logging
 import re
-from typing import Any, Dict, List, Optional
-
+import json
+import logging
 import requests
-# ------------------------------------------------------------------
-# Router helpers (DO NOT REMOVE – orchestrator depends on these)
-# ------------------------------------------------------------------
+from typing import Optional, List, Dict, Any
+from .kidney_kg import query_kidney_kg
 
-def is_kidney_query(text: str) -> bool:
-    if not text:
-        return False
-    t = text.lower()
-    return any(k in t for k in [
-        "ckd", "kidney", "renal", "creatinine",
-        "potassium", "phosphorus", "dialysis"
-    ])
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
+# Config
+KIDNEY_OV_URL = os.getenv("KIDNEY_OV_URL", "http://192.168.2.69:8080")
+KIDNEY_RAG_URL = os.getenv("KIDNEY_RAG_URL", "http://192.168.2.69:9104") # Port 9104
+KIDNEY_HTTP_TIMEOUT = float(os.getenv("KIDNEY_HTTP_TIMEOUT", "30"))
+KIDNEY_MAX_NEW_TOKENS = int(os.getenv("KIDNEY_MAX_NEW_TOKENS", "400"))
+KIDNEY_RAG_TOPK = int(os.getenv("KIDNEY_RAG_TOPK", "3"))
 
-_KIDNEY_PAT = re.compile(
-    r"\b(ckd|chronic kidney|kidney disease|kidney|renal|egfr|creatinine|"
-    r"dialysis|nephro|proteinuria|potassium|phosphorus|fluid restriction)\b",
+# 1. INTENT DETECTOR
+_CKD_PAT = re.compile(
+    r"\b(kidney|ckd|renal|creatinine|potassium|phosphorus|dialysis|gfr|nephropathy)\b",
     flags=re.IGNORECASE,
 )
 
 def is_kidney_query(text: Optional[str]) -> bool:
-    if not text:
-        return False
-    return bool(_KIDNEY_PAT.search(text))
+    if not text: return False
+    return bool(_CKD_PAT.search(text))
 
-
-logger = logging.getLogger(__name__)
-
-# ----------------------------------------------------------------------
-# Endpoints
-# ----------------------------------------------------------------------
-
-KIDNEY_OV_URL = os.getenv("KIDNEY_OV_URL", "http://192.168.2.69:9008")
-KIDNEY_RAG_URL = os.getenv("KIDNEY_RAG_URL", "http://192.168.2.69:9104")
-
-KIDNEY_MAX_NEW_TOKENS = int(os.getenv("KIDNEY_MAX_NEW_TOKENS", "220"))
-KIDNEY_HTTP_TIMEOUT = float(os.getenv("KIDNEY_HTTP_TIMEOUT", "120"))
-KIDNEY_RAG_TIMEOUT = float(os.getenv("KIDNEY_RAG_TIMEOUT", "5.0"))
-
-# ----------------------------------------------------------------------
-# System prompt (IMPORTANT: no placeholders like <short option>, no STOP-after text)
-# ----------------------------------------------------------------------
-
-SYSTEM_PROMPT = """
-You are a conservative renal dietitian for CKD patients in India.
-You focus on diet, potassium, phosphorus, sodium, protein, and fluids.
-You ALWAYS advise the patient to confirm changes with their nephrologist.
-
-STRICT RULES:
-- Never prescribe or adjust medications or dialysis.
-- Use mostly Indian vegetarian options (dal, sabzi, roti, idli, dosa, rice, curd, paneer).
-- Keep sodium low; avoid pickles/papad/namkeen/packaged foods/restaurant gravies.
-- Be careful with high-potassium foods (tomato, banana, coconut water) depending on labs.
-- Be careful with high-phosphorus foods (colas, processed cheese, bakery/processed foods).
-- Keep response under 300 words.
-- DO NOT repeat the patient request.
-- Output ONLY the exact headings and bullet format below.
-
-Output format (exact headings in this order, each meal has exactly 2 options):
-
-Breakfast:
-- Option 1: ...
-- Option 2: ...
-
-Mid-morning snack:
-- Option 1: ...
-- Option 2: ...
-
-Lunch:
-- Option 1: ...
-- Option 2: ...
-
-Evening snack:
-- Option 1: ...
-- Option 2: ...
-
-Dinner:
-- Option 1: ...
-- Option 2: ...
-
-General Guidelines:
-- 4–6 bullets on sodium, potassium/phosphorus, protein, fluids, and when to consult nephrologist.
-""".strip()
-
-# ----------------------------------------------------------------------
-# RAG helpers
-# ----------------------------------------------------------------------
-
-def _query_kidney_rag(question: str, top_k: int = 3) -> List[Dict[str, Any]]:
-    url = f"{KIDNEY_RAG_URL}/v1/kidney/search"
-    payload = {"query": question, "top_k": top_k}
-    try:
-        resp = requests.post(url, json=payload, timeout=KIDNEY_RAG_TIMEOUT)
-        resp.raise_for_status()
-        data = resp.json() or {}
-        hits = data.get("hits", []) or []
-
-        print(f"[KIDNEY-RAG] query={question!r} top_k={top_k} hits={len(hits)}", flush=True)
-        for h in hits[:top_k]:
-            print(f"[KIDNEY-RAG] id={h.get('id')} title={h.get('title')} score={h.get('score')}", flush=True)
-
-        return hits
-    except Exception as e:
-        logger.warning("[KIDNEY-RAG] error calling RAG: %s", e)
-        print(f"[KIDNEY-RAG] ERROR: {e}", flush=True)
-        return []
-
-def _format_rag_evidence(hits: List[Dict[str, Any]], max_items: int = 3) -> str:
-    """
-    Keep evidence short and clearly marked as INTERNAL USE so we can strip it if echoed.
-    """
-    if not hits:
-        return "RAG_EVIDENCE: none"
-    lines = ["RAG_EVIDENCE (internal, do not repeat):"]
-    for h in hits[:max_items]:
-        title = (h.get("title") or "").strip()
-        text = (h.get("text") or "").strip()
-        if title and text:
-            lines.append(f"- {title}: {text}")
-        elif text:
-            lines.append(f"- {text}")
-    return "\n".join(lines)
-
-# ----------------------------------------------------------------------
-# Prompt builder
-# ----------------------------------------------------------------------
-
-def build_kidney_prompt(user_message: str, use_rag: bool = True) -> str:
-    parts: List[str] = [SYSTEM_PROMPT]
-
-    if use_rag:
-        hits = _query_kidney_rag(user_message, top_k=3)
-        parts.append(_format_rag_evidence(hits))
-
-    parts.append(f"PATIENT_REQUEST (do not repeat): {user_message.strip()}")
-    parts.append("Write the final answer now, exactly in the required format.")
-    return "\n\n".join(parts).strip() + "\n"
-
-# ----------------------------------------------------------------------
-# Output cleanup + validation
-# ----------------------------------------------------------------------
-
-HEADINGS = [
-    "Breakfast:",
-    "Mid-morning snack:",
-    "Lunch:",
-    "Evening snack:",
-    "Dinner:",
-    "General Guidelines:",
-]
-
-def _contains_bad_markers(text: str) -> bool:
-    bad = [
-        "OUTPUT FORMAT",
-        "STOP after",
-        "RAG_EVIDENCE",
-        "PATIENT_REQUEST",
-        "Dietitian:",
-        "<short",
-        "<",
-        ">",
-        "Option  :",
-        "Option option",
-        'Breakfast:"',
-    ]
-    t = (text or "").lower()
-    return any(b.lower() in t for b in bad)
-
-def _extract_sections(raw: str) -> str:
-    """
-    Extract only the 6 required sections from the model output.
-    If model output contains extra junk, we drop it.
-    """
-    if not raw:
-        return ""
-
-    # Normalize newlines
-    text = raw.replace("\r\n", "\n").replace("\r", "\n")
-
-    # Find first real "Breakfast:" line and drop everything before it
-    idx = text.find("Breakfast:")
-    if idx != -1:
-        text = text[idx:]
-
-    # Build regex that captures each heading block up to next heading
-    pattern = re.compile(
-        r"(?s)"
-        r"(Breakfast:.*?)(?=Mid-morning snack:|$)"
-        r"(Mid-morning snack:.*?)(?=Lunch:|$)"
-        r"(Lunch:.*?)(?=Evening snack:|$)"
-        r"(Evening snack:.*?)(?=Dinner:|$)"
-        r"(Dinner:.*?)(?=General Guidelines:|$)"
-        r"(General Guidelines:.*)$"
-    )
-
-    m = pattern.search(text)
-    if not m:
-        return text.strip()
-
-    cleaned = "\n\n".join(s.strip() for s in m.groups() if s)
-    return cleaned.strip()
-
-def _is_valid_format(text: str) -> bool:
-    """
-    Must contain each heading exactly once.
-    For each meal heading, must have Option 1 and Option 2 lines.
-    For General Guidelines, must have at least 4 bullets.
-    """
-    if not text:
-        return False
-
-    # Headings appear once
-    for h in HEADINGS:
-        if text.count(h) != 1:
-            return False
-
-    # No placeholder / prompt leak markers
-    if _contains_bad_markers(text):
-        return False
-
-    # Each meal section has both options
-    for h in HEADINGS[:-1]:
-        # block from heading to next heading
-        start = text.find(h)
-        end = min([text.find(nh) for nh in HEADINGS if nh != h and text.find(nh) > start] + [len(text)])
-        block = text[start:end]
-        if "Option 1:" not in block or "Option 2:" not in block:
-            return False
-
-    # General guidelines bullets count
-    g = "General Guidelines:"
-    gs = text.find(g)
-    gblock = text[gs:]
-    bullets = [ln for ln in gblock.splitlines() if ln.strip().startswith("-")]
-    if len(bullets) < 4:
-        return False
-
-    return True
-
-def _fallback_plan(user_message: str) -> str:
-    """
-    Deterministic safe fallback if model output is messy.
-    Keep it practical for CKD stage 3 Indian vegetarian.
-    """
-    # Tomato note depends on potassium labs; keep conservative.
-    return (
-        "Breakfast:\n"
-        "- Option 1: Vegetable upma (no added salt) + 1 small bowl curd.\n"
-        "- Option 2: 2 idli + sambar (low salt) + coconut chutney (small).\n\n"
-        "Mid-morning snack:\n"
-        "- Option 1: 1 apple or guava (small).\n"
-        "- Option 2: Unsalted makhana (1 small handful).\n\n"
-        "Lunch:\n"
-        "- Option 1: 2 phulka (no salted ghee) + lauki/beans sabzi + moong dal (measured).\n"
-        "- Option 2: 1 cup rice + cabbage/cauliflower sabzi + curd (small bowl).\n\n"
-        "Evening snack:\n"
-        "- Option 1: Lemon water + roasted chana (unsalted, small).\n"
-        "- Option 2: Poha (low oil, no added salt) with veggies.\n\n"
-        "Dinner:\n"
-        "- Option 1: 2 phulka + ridge gourd (turai) curry + small dal portion.\n"
-        "- Option 2: Vegetable khichdi (moong dal + rice, low salt) + cucumber salad.\n\n"
-        "General Guidelines:\n"
-        "- Tomatoes: if potassium is normal, use small portions occasionally; avoid tomato-heavy dishes daily.\n"
-        "- Keep salt low: avoid pickles, papad, namkeen, packaged snacks, instant soups/noodles.\n"
-        "- Protein: keep moderate—measured portions of dal/legumes/paneer; avoid protein powders unless advised.\n"
-        "- Prefer home-cooked meals; flavor with lemon, herbs, garlic, cumin instead of salt.\n"
-        "- Review labs (potassium/phosphorus/creatinine) and confirm diet limits with your nephrologist/dietitian.\n"
-    ).strip()
+# 2. HELPER FUNCTIONS
+_SECTION_ORDER = ["Breakfast", "Mid-morning snack", "Lunch", "Evening snack", "Dinner", "General Guidelines"]
+_LEAK_MARKERS = ["you are a helpful", "system prompt", "generate a", "strict rules", "evidence"]
 
 def _strip_prompt_leaks(text: str) -> str:
-    if not text:
-        return ""
-
-    BAD_MARKERS = [
-        "STOP after",
-        "RAG_EVIDENCE",
-        "PATIENT_REQUEST",
-        "You are a",
-        "Under each meal heading",
-        "<short",
-        "Option : <",
-    ]
-
+    if not text: return ""
     cleaned = []
-    for line in text.splitlines():
-        if any(b.lower() in line.lower() for b in BAD_MARKERS):
-            continue
-        cleaned.append(line)
-
+    for ln in text.splitlines():
+        low = ln.strip().lower()
+        if not cleaned and not low: continue
+        if low.startswith(("system:", "user:", "assistant:")): continue
+        if any(m in low for m in _LEAK_MARKERS): continue
+        cleaned.append(ln)
     return "\n".join(cleaned).strip()
 
-# ----------------------------------------------------------------------
-# Main call
-# ----------------------------------------------------------------------
+def _parse_sections(text: str) -> Dict[str, str]:
+    out = {k.lower(): "" for k in _SECTION_ORDER}
+    if not text: return out
+    s = _strip_prompt_leaks(text)
+    s = re.sub(r"(?im)^#+\s*", "", s).strip()
+    parts = []
+    cur_name = None
+    cur_buf = []
+    for ln in s.splitlines():
+        t = ln.strip()
+        m = re.match(r"(?im)^(breakfast|mid-morning snack|mid morning snack|lunch|evening snack|dinner|general guidelines)\s*:\s*$", t)
+        if m:
+            if cur_name: parts.append((cur_name, "\n".join(cur_buf).strip()))
+            cur_name = m.group(1).lower().replace("mid morning", "mid-morning")
+            cur_buf = []
+        else:
+            cur_buf.append(ln)
+    if cur_name: parts.append((cur_name, "\n".join(cur_buf).strip()))
+    for name, body in parts:
+        if name in out: out[name] = body.strip()
+    return out
 
-def call_kidney_qwen(user_message: str, use_rag: bool = True) -> str:
-    """
-    Generate CKD diet response using Qwen-OV.
-    Ensures:
-    - No prompt leakage
-    - Strict output format
-    - Safe fallback if model misbehaves
-    """
+def _pick_bullets(block: str, max_items: int = 2) -> List[str]:
+    if not block: return []
+    lines = []
+    for ln in block.splitlines():
+        s = ln.strip()
+        if not s: continue
+        if s.startswith(("-", "•", "*")):
+            s = s.lstrip("*•-").replace("**", "").strip()
+            s = re.sub(r"(?i)^\s*option\s*\d+\s*:\s*", "", s).strip()
+            if s: lines.append("- " + s)
+            if len(lines) >= max_items: break
+    if not lines: 
+        for ln in block.splitlines():
+            s = ln.strip()
+            if not s: continue
+            s = re.sub(r"(?i)^\s*option\s*\d+\s*:\s*", "", s).strip()
+            if s: lines.append("- " + s)
+            if len(lines) >= max_items: break
+    return lines[:max_items]
 
-    prompt = build_kidney_prompt(user_message, use_rag=use_rag)
-    payload = {
-        "prompt": prompt,
-        "max_new_tokens": KIDNEY_MAX_NEW_TOKENS,
-    }
+def _deopt(s: str) -> str:
+    s = s.strip()
+    s = re.sub(r"^\-\s*", "", s)
+    s = re.sub(r"(?i)^\s*option\s*\d+\s*:\s*", "", s).strip()
+    return s
 
+def _ensure_two(opts: List[str], fallback_a: str, fallback_b: str) -> List[str]:
+    out = opts[:2]
+    if len(out) < 1: out.append("- " + fallback_a)
+    if len(out) < 2: out.append("- " + fallback_b)
+    return out[:2]
+
+def _normalize_to_standard_format(raw: str) -> str:
+    logger.info(f"[CKD-RAW-CONTENT] {raw[:500]}...") 
+    raw = _strip_prompt_leaks(raw)
+    sec = _parse_sections(raw)
+    
+    b = _ensure_two(_pick_bullets(sec["breakfast"], 2), "Rice Porridge (Congee)", "White Bread Toast + Egg White")
+    mid = _ensure_two(_pick_bullets(sec["mid-morning snack"], 2), "1 Apple (Peeled)", "Grapes (Small portion)")
+    l = _ensure_two(_pick_bullets(sec["lunch"], 2), "White Rice + Steamed Fish", "Rice Noodles + Clear Soup")
+    eve = _ensure_two(_pick_bullets(sec["evening snack"], 2), "Rice Crackers", "Tea (Weak)")
+    d = _ensure_two(_pick_bullets(sec["dinner"], 2), "Grilled Chicken + White Rice", "Stir-fry Gourd (Leached)")
+    
+    g = _pick_bullets(sec["general guidelines"], 6)
+    if len(g) < 4:
+        g = [
+            "- RESTRICT POTASSIUM: Avoid bananas, spinach, coconut water.",
+            "- RESTRICT PHOSPHORUS: Avoid dairy, nuts, cola, brown rice.",
+            "- DANGER: Avoid Starfruit strictly.",
+            "- Leach vegetables (soak/boil) before cooking."
+        ]
+
+    out = []
+    out.append("Breakfast:")
+    out.append(f"- Option 1: {_deopt(b[0])}")
+    out.append(f"- Option 2: {_deopt(b[1])}")
+    out.append("\nMid-morning snack:")
+    out.append(f"- Option 1: {_deopt(mid[0])}")
+    out.append(f"- Option 2: {_deopt(mid[1])}")
+    out.append("\nLunch:")
+    out.append(f"- Option 1: {_deopt(l[0])}")
+    out.append(f"- Option 2: {_deopt(l[1])}")
+    out.append("\nEvening snack:")
+    out.append(f"- Option 1: {_deopt(eve[0])}")
+    out.append(f"- Option 2: {_deopt(eve[1])}")
+    out.append("\nDinner:")
+    out.append(f"- Option 1: {_deopt(d[0])}")
+    out.append(f"- Option 2: {_deopt(d[1])}")
+    out.append("\nGeneral Guidelines:")
+    out.extend(g)
+    return "\n".join(out).strip()
+
+def _is_valid_format(text: str) -> bool:
+    if not text: return False
+    low = text.lower()
+    if "breakfast" in low and "lunch" in low: return True
+    return False
+
+def _fallback_plan(location: str) -> str:
+    if location == "Singapore":
+        return "Breakfast:\n- Option 1: Plain Rice Porridge (Congee)\n- Option 2: White Bread Toast + Jam\n\nMid-morning snack:\n- Option 1: Apple (Peeled)\n- Option 2: Red Apple\n\nLunch:\n- Option 1: White Rice + Steamed Fish\n- Option 2: Bee Hoon Soup (Clear broth, no internal organs)\n\nEvening snack:\n- Option 1: Rice Crackers\n- Option 2: Weak Tea\n\nDinner:\n- Option 1: Stir-fried Cabbage (Leached) + Chicken\n- Option 2: Steamed Egg + White Rice\n\nGeneral Guidelines:\n- AVOID: Starfruit, Coconut Milk, Herbal Soups.\n- Choose White Rice over Brown Rice (Lower Phosphorus)."
+    return "Breakfast:\n- Option 1: Rice Idli (Fermented) + Onion Chutney\n- Option 2: Upma (Low veg)\n\nMid-morning snack:\n- Option 1: Guava (Peeled)\n- Option 2: Pear\n\nLunch:\n- Option 1: White Rice + Leached Dal\n- Option 2: 2 Roti + Bottle Gourd Curry\n\nEvening snack:\n- Option 1: Murmura (Puffed Rice)\n- Option 2: Black Tea\n\nDinner:\n- Option 1: Vegetable Khichdi (Leached veg)\n- Option 2: Arbi (Colocasia) Fry + Roti\n\nGeneral Guidelines:\n- LEACH all vegetables before cooking.\n- Avoid Spinach, Coconut, Dry Fruits."
+
+def _fetch_kidney_rag(query: str, top_k: int) -> List[Dict[str, Any]]:
     try:
-        r = requests.post(
-            f"{KIDNEY_OV_URL}/generate",
-            json=payload,
-            timeout=KIDNEY_HTTP_TIMEOUT,
-        )
+        resp = requests.post(f"{KIDNEY_RAG_URL}/v1/kidney/search", json={"query": query, "top_k": top_k}, timeout=KIDNEY_HTTP_TIMEOUT)
+        return resp.json().get("hits") or []
+    except:
+        return []
+
+def build_kidney_prompt(user_input: str, location: str, use_rag: bool = True) -> str:
+    rag_query = f"Singapore HealthHub CKD diet {user_input}" if location == "Singapore" else f"ICMR India CKD diet {user_input}"
+    rag_hits = _fetch_kidney_rag(rag_query, KIDNEY_RAG_TOPK) if use_rag else []
+    
+    evidence = ""
+    if rag_hits:
+        evidence = "Use these Guidelines:\n" + "\n".join([f"- {h.get('text','')[:300]}" for h in rag_hits])
+
+    context = "Patient is in SINGAPORE. Suggest LOW POTASSIUM/PHOSPHORUS HAWKER FOOD. Warn against STARFRUIT." if location == "Singapore" else "Patient is in INDIA. Suggest LOW POTASSIUM HOME FOOD. Warn against SPINACH."
+    
+    return (
+        f"You are a Dietitian specializing in Kidney Disease (CKD). {context}\n"
+        f"Create a 1-day CKD meal plan.\n"
+        f"REQUIRED FORMAT:\n"
+        f"Breakfast:\n- Option 1: ...\n- Option 2: ...\n"
+        f"Mid-morning snack:\n- Option 1: ...\n- Option 2: ...\n"
+        f"Lunch:\n- Option 1: ...\n- Option 2: ...\n"
+        f"Evening snack:\n- Option 1: ...\n- Option 2: ...\n"
+        f"Dinner:\n- Option 1: ...\n- Option 2: ...\n"
+        f"General Guidelines:\n- ...\n\n"
+        f"EVIDENCE TO USE:\n{evidence}\n\n"
+        f"Patient Profile: {user_input}"
+    )
+
+def call_kidney_qwen(user_message: str, use_rag: bool = True, use_kg: bool = True) -> str:
+    location = "India"
+    if "singapore" in user_message.lower(): location = "Singapore"
+    try:
+        data = json.loads(user_message)
+        if isinstance(data, dict):
+            loc = data.get("patient_profile", {}).get("Location", "") or data.get("Location", "")
+            if "Singapore" in loc: location = "Singapore"
+    except: pass
+
+    logger.info(f"[KIDNEY AGENT] Detected Location: {location}")
+    prompt = build_kidney_prompt(user_message, location, use_rag)
+    
+    try:
+        r = requests.post(f"{KIDNEY_OV_URL}/generate", json={"prompt": prompt, "max_new_tokens": KIDNEY_MAX_NEW_TOKENS}, timeout=KIDNEY_HTTP_TIMEOUT)
         r.raise_for_status()
-
-        data = r.json() or {}
-        raw = (
-            data.get("output")
-            or data.get("text")
-            or data.get("completion")
-            or ""
-        ).strip()
-
-        # 1️⃣ Hard strip prompt leaks / garbage
-        raw = _strip_prompt_leaks(raw)
-
-        # 2️⃣ Extract only required sections
-        cleaned = _extract_sections(raw)
-
-        # 3️⃣ Validate strict format
-        if not _is_valid_format(cleaned):
-            print("[KIDNEY] invalid format after cleanup → fallback", flush=True)
-            return _fallback_plan(user_message)
-
-        # 4️⃣ Final sanity guard
-        if len(cleaned) < 120:
-            print("[KIDNEY] response too short → fallback", flush=True)
-            return _fallback_plan(user_message)
-
-        return cleaned
-
-    except Exception:
-        logger.exception("Kidney Qwen OV error")
-        return _fallback_plan(user_message)
-
+        js = r.json()
+        
+        raw = js.get("output") or js.get("generated_text") or js.get("text") or js.get("reply") or ""
+        if isinstance(raw, list) and len(raw) > 0: raw = raw[0]
+        
+        cleaned = _normalize_to_standard_format(raw)
+        if _is_valid_format(cleaned):
+            return cleaned
+            
+        logger.warning(f"[CKD] Invalid format. Fallback for {location}.")
+        return _fallback_plan(location)
+        
+    except Exception as e:
+        logger.exception(f"Error calling AI: {e}")
+        return _fallback_plan(location)
