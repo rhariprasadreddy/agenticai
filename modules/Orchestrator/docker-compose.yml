@@ -3,6 +3,9 @@ services:
     build: .
     container_name: orchestrator
     environment:
+      DIAB_NEO4J_URI: "bolt://192.168.2.69:7687"
+      DIAB_NEO4J_USER: "neo4j"
+      DIAB_NEO4J_PASSWORD: "neo4j123"
       A1_URL: http://a1:9001
       A2_URL: http://a2:9002
       A3_URL: http://a3:9003

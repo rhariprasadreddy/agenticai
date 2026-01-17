@@ -1,25 +1,21 @@
 # -----------------------------
-# Python noise
+# Python & Editors
 # -----------------------------
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
 .env
-.venv
+.venv/
+venvs/
 venv/
+*.bak
+*.wkg
+*~
+.DS_Store
 .vscode/
 
 # -----------------------------
-# Caches / HF
-# -----------------------------
-.cache/
-.hf/
-wandb/
-mlruns/
-
-# -----------------------------
-# Large model artifacts (DO NOT COMMIT)
+# Model Weights & Large Artifacts (Critical for Xeon)
 # -----------------------------
 models/
 **/models/
@@ -29,125 +25,52 @@ work/
 *.pt
 *.pth
 *.bin
-*.xml
 *.onnx
+*.xml
+*.pb
+*.h5
 *.tgz
 *.tar.gz
 *.zip
 
 # -----------------------------
-# Data (DO NOT COMMIT)
+# Data (Keep Local, Never Commit)
 # -----------------------------
-train.jsonl
-val.jsonl
-data/**/curated/*.jsonl
-data/**/raw/
-data/**/work/
-data/raw/
 *.parquet
 *.csv
-
-# -----------------------------
-# RAG indexes
-# -----------------------------
-rag/**/faiss_index/
-
-# --- Eval outputs / logs ---
-eval/
-archive/
-logs/
-logs_dir/
-*.log
-*.jsonl
-
-
-# -----------------------------
-# Data (generated / runtime – keep OUT of git)
-# -----------------------------
-data/diabetes/
-data/hypertension/
-data/kidney/
-data/lipids/
-data/**/curated/*.jsonl
-data/**/work/
-data/**/notes/
-
-# -----------------------------
-# RAG / Vector DB
-# -----------------------------
-data/rag/
-rag/
-rag/**
-
-# -----------------------------
-# Archives / backups
-# -----------------------------
-archive/
-*.bak
-
-# -----------------------------
-# Eval outputs / logs
-# -----------------------------
-eval/
-*.log
-*.jsonl
-
-
-# --- editor / backup artifacts ---
-*.bak
-*.wkg
-*.swp
-*~
-
-# --- data artifacts (don’t commit datasets) ---
-data/**/curated/*.jsonl
-data/**/work/*.jsonl
+*.db
 data/**/raw/
 data/**/pdf/
-data/**/notes/
-
-# --- eval / logs ---
-eval/
-*.log
-
-
-# -----------------------------
-# Datasets + raw sources (never commit)
-# -----------------------------
-data/**/raw/
 data/**/curated/*.jsonl
 data/**/curated/*.parquet
 data/**/curated/*.csv
 data/**/curated/*.zip
-data/**/curated/*.tar.gz
-data/**/curated/*.tgz
-data/**/work/*.jsonl
-data/**/work/*.parquet
+data/**/work/
 
 # -----------------------------
-# RAG + KG runtime artifacts
+# RAG / KG / DB Runtime Artifacts
 # -----------------------------
 rag/**
+rag-diabetes/
 kg-*/
+kg-diabetes/
 neo4j/**
-*.db
 
 # -----------------------------
-# Local backups / scratch
+# Logs & Local Configs
 # -----------------------------
+*.log
+diabeticschat.json
+gateway-profile.json
+profile-orch.json
+
+# -----------------------------
+# Local Archives / Backups
+# -----------------------------
+archive/
+eval/
 *_backup_*/
+*_xeon_backup_*/
+agenticai-repo/
 _extras_not_in_git/
-*.log
-*.bak
-*.wkg
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-.env
-*.log
-
-# Local DB / indexes (keep or track intentionally)
-services/**/.venv/
-services/**/rag_*.log
+inference/**/backups/
