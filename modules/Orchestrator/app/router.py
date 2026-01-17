@@ -1,116 +1,83 @@
-# app/router.py
-import os, asyncio, httpx
+import os
+import httpx
+import logging
 from fastapi import HTTPException
-
 from .schemas import Profile, DietRules, Gaps, Targets, Conflicts, Plan
 
-from .tools.diabetes_qwen_ov import is_diabetes_query, call_diabetes_qwen
-from .tools.hypertension_qwen_ov import is_hypertension_query, call_htn_qwen
-from .tools.lipids_qwen_ov import is_lipids_query, call_lipids_qwen
-from .tools.kidney_qwen_ov import is_kidney_query, call_kidney_qwen 
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("orchestrator")
 
-# -------------------------------------------------------------------
-# Generic LLM fallback (for non-diabetes queries)
-# -------------------------------------------------------------------
-def call_generic_llm(prompt: str) -> str:
-    """
-    Existing logic that calls your default LLM / MCP tools.
-    (Fill in with your current implementation.)
-    """
-    # e.g. forward to MCP-Gateway or local model
-    raise NotImplementedError
-
-
-def route_user_message(user_message: str) -> dict:
-    """
-    Central routing function used by your FastAPI endpoint.
-    Returns a dict with the reply and some metadata.
-    """
-
-    # 1) Diabetes-specialized routing
-    if is_diabetes_query(user_message):
-        completion = call_diabetes_qwen(user_message)
-        return {
-            "reply": completion,
-            "provider": "diabetes_qwen_ov",
-            "specialized": True,
-        }
-
-    # 2) Hypertension-specialized routing
-    if is_hypertension_query(user_message):
-        completion = call_htn_qwen(user_message)
-        return {
-            "reply": completion,
-            "provider": "hypertension_qwen_ov",
-            "specialized": True,
-        }
-
-    # 3) Lipids-specialized routing
-    if is_lipids_query(user_message):
-        completion = call_lipids_qwen(user_message)
-        return {
-            "reply": completion,
-            "provider": "lipids_qwen_ov",
-            "specialized": True,
-        }
-
-    # 4) Kidney-specialized routing
-    if is_kidney_query(user_message):
-        completion = call_kidney_qwen(user_message)
-        return {
-            "reply": completion,
-            "provider": "kidney_qwen_ov",
-            "specialized": True,
-        }
-
-   # 5) Fallback: generic orchestrator path
-    completion = call_generic_llm(user_message)
-    return {
-        "reply": completion,
-        "provider": "generic_llm",
-        "specialized": False,
-    }
-
-
-# -------------------------------------------------------------------
-# Existing A1–A5 pipeline (unchanged)
-# -------------------------------------------------------------------
+# --- CONFIGURATION ---
 A1_URL = os.getenv("A1_URL", "http://a1:9001")
 A2_URL = os.getenv("A2_URL", "http://a2:9002")
 A3_URL = os.getenv("A3_URL", "http://a3:9003")
 A4_URL = os.getenv("A4_URL", "http://a4:9004")
 A5_URL = os.getenv("A5_URL", "http://a5:9005")
 
-TIMEOUT = httpx.Timeout(15.0, connect=5.0)
+# FIX: Increased Timeout to 3 minutes (180s) for heavy inference loads
+TIMEOUT = httpx.Timeout(180.0, connect=10.0) 
 HEADERS = {"Content-Type": "application/json"}
 
-
-async def call(url: str, payload: dict) -> dict:
+# --- HELPER: ASYNC HTTP CALL ---
+async def call_service(url: str, payload: dict) -> dict:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        r = await client.post(url, json=payload, headers=HEADERS)
-        if r.status_code >= 400:
-            raise HTTPException(status_code=r.status_code, detail=r.text)
-        return r.json()
+        try:
+            logger.info(f"Calling Service: {url}")
+            r = await client.post(url, json=payload, headers=HEADERS)
+            r.raise_for_status()
+            return r.json()
+        except httpx.ReadTimeout:
+            logger.error(f"Timeout waiting for {url}")
+            raise HTTPException(status_code=504, detail=f"Service {url} took too long to respond.")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP Error calling {url}: {e.response.text}")
+            raise HTTPException(status_code=e.response.status_code, detail=f"Service {url} failed: {e.response.text}")
+        except Exception as e:
+            logger.error(f"Connection Error calling {url}: {str(e)}")
+            raise HTTPException(status_code=503, detail=f"Service {url} unavailable")
 
+# --- ROUTING LOGIC (Unchanged) ---
+async def route_user_message(user_message: str) -> dict:
+    return {
+        "reply": "Orchestrator is Online. Please send a structured JSON Profile to /run-pipeline.",
+        "provider": "Orchestrator",
+        "specialized": False
+    }
+# ... imports and config remain the same ...
 
 async def run_pipeline(profile: Profile) -> Plan:
-    # A1 → diet rules
-    a1 = await call(f"{A1_URL}/diet-rules", profile.model_dump())
-    diet_rules = DietRules(**a1)
+    logger.info(f"Starting Pipeline for Patient: {profile.patient_id}")
 
-    # A2 → gaps
-    a2 = await call(f"{A2_URL}/gaps", {"patient_id": profile.patient_id})
-    gaps = Gaps(**a2)
+    # STEP 1: A1 (Diet Rules)
+    logger.info("--- Step 1: Calling A1 (Diet Rules) ---")
+    a1_resp = await call_service(f"{A1_URL}/diet-rules", profile.model_dump())
+    diet_rules = DietRules(**a1_resp)
+    logger.info(f"A1 Rules Derived: {len(diet_rules.consolidated_rules)} sections found.")
 
-    # A3 → targets
-    a3 = await call(f"{A3_URL}/targets", {"patient_id": profile.patient_id})
-    targets = Targets(**a3)
+    # STEP 2: A2 (Gaps) - FIXED
+    logger.info("--- Step 2: Calling A2 (Deficiencies) ---")
+    # OLD: {"patient_id": profile.patient_id}
+    # NEW: Send full profile so it sees meds/conditions
+    a2_resp = await call_service(f"{A2_URL}/gaps", profile.model_dump())
+    gaps = Gaps(**a2_resp)
 
-    # A4 → conflicts
-    a4 = await call(f"{A4_URL}/conflicts", {"patient_id": profile.patient_id})
-    conflicts = Conflicts(**a4)
+    # STEP 3: A3 (Targets) - FIXED
+    logger.info("--- Step 3: Calling A3 (Targets) ---")
+    # OLD: {"patient_id": profile.patient_id}
+    # NEW: Send full profile so it sees age/gender/creatinine
+    a3_resp = await call_service(f"{A3_URL}/targets", profile.model_dump())
+    targets = Targets(**a3_resp)
 
-    # A5 → plan
+    # STEP 4: A4 (Conflicts) - FIXED
+    logger.info("--- Step 4: Calling A4 (Conflicts) ---")
+    # OLD: {"patient_id": profile.patient_id}
+    # NEW: Send full profile so it sees meds/diet
+    a4_resp = await call_service(f"{A4_URL}/conflicts", profile.model_dump())
+    conflicts = Conflicts(**a4_resp)
+
+    # STEP 5: A5 (Planner)
+    logger.info("--- Step 5: Calling A5 (Synthesis) ---")
     a5_payload = {
         "patient_id": profile.patient_id,
         "diet_rules": diet_rules.model_dump(),
@@ -118,7 +85,7 @@ async def run_pipeline(profile: Profile) -> Plan:
         "targets": targets.model_dump(),
         "conflicts": conflicts.model_dump(),
     }
-    a5 = await call(f"{A5_URL}/plan", a5_payload)
-    plan = Plan(**a5)
-    return plan
+    a5_resp = await call_service(f"{A5_URL}/plan", a5_payload)
+    plan = Plan(**a5_resp)
 
+    return plan

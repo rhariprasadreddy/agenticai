@@ -1,4 +1,8 @@
-fastapi==0.115.5
-uvicorn[standard]==0.32.0
-pyyaml==6.0.2
-pydantic==2.9.2
+fastapi
+uvicorn[standard]
+pydantic
+requests
+httpx
+python-multipart
+# Add any other libs your agents specifically need
+neo4j

@@ -1,0 +1,4 @@
+{
+  "message": "GENERATE_CLINICAL_REPORT: Patient has Hypertension. Generate a strict DASH diet plan.\n\nPATIENT PROFILE:\n- Location: India\n- Ailments: High BP\n- Preferences: Vegetarian, South Indian",
+  "stream": false
+}

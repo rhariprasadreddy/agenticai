@@ -1,43 +1,41 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
+# --- INPUT MODEL ---
 class Profile(BaseModel):
-    version: str = "v1"
     patient_id: str
-    age: int
-    sex: str
-    bmi: float
-    diagnoses_icd: List[str]
-    activity: str
-    culture: str
-    locale: str
-    budget: float
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    location: Optional[str] = None
+    ailments: List[str] = []
+    medical_record: Optional[Dict[str, Any]] = {} 
+    preferences: Optional[str] = None
+    # NEW: Capture the user's specific question/request
+    query: Optional[str] = "" 
 
+    class Config:
+        extra = "allow"
+
+# --- AGENT RESPONSE MODELS ---
 class DietRules(BaseModel):
-    version: str = "v1"
-    patient_id: str
-    rules: Dict[str, Any]
+    patient_id: str = "unknown"
+    consolidated_rules: List[str] = []
+    sources: List[str] = []
 
 class Gaps(BaseModel):
-    version: str = "v1"
-    patient_id: str
-    gaps: List[Dict[str, Any]]
+    patient_id: str = "unknown"
+    gaps: Dict[str, Any] = {}
 
 class Targets(BaseModel):
-    version: str = "v1"
-    patient_id: str
-    kcal: int
-    macros: Dict[str, float]
-    micros: Dict[str, float] = {}
+    patient_id: str = "unknown"
+    targets: Dict[str, Any] = {}
 
 class Conflicts(BaseModel):
-    version: str = "v1"
-    patient_id: str
-    items: List[Dict[str, Any]] = []
+    patient_id: str = "unknown"
+    interactions: List[str] = []
+    flags: Dict[str, str] = {}
 
 class Plan(BaseModel):
-    version: str = "v1"
     patient_id: str
-    plan: Dict[str, Any]
-    shopping_list: List[str] = []
-    trace: Dict[str, Any] = {}
+    final_plan: str
+    safety_notes: str

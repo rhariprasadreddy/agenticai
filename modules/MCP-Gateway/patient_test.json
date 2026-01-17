@@ -1,0 +1,4 @@
+{
+  "message": "GENERATE_CLINICAL_REPORT: Based on the following patient profile, analyze the ailments and generate a strict 6-month diet plan.\n\nPATIENT PROFILE:\n- Age: 45\n- Gender: Male\n- Ailments: Type 2 Diabetes (HbA1c 7.2%), Hypertension\n- BMI: 28.5 (Overweight)\n- DRI Targets: 1800 kcal, Low Sodium (<2000mg)\n- Location: Singapore (Prefer local food options like Hawker centers)",
+  "stream": false
+}
