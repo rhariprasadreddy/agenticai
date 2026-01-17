@@ -10,12 +10,14 @@ from optimum.intel.openvino import OVModelForCausalLM
 from transformers import AutoTokenizer
 
 # Default to the path you just exported
-OV_DIR = Path(
-    os.getenv(
-        "LIPIDS_OV_DIR",
-        "/models/openvino/lipids/bf16",   # will be volume-mounted into container
-    )
-).resolve()
+import os
+model_path = os.getenv("MODEL_DIR", "/model")
+# OV_DIR = Path(
+#    os.getenv(
+#        "LIPIDS_OV_DIR",
+#        "/models/openvino/lipids/bf16",   # will be volume-mounted into container
+#    )
+#).resolve()
 
 app = FastAPI(
     title="Lipids Diet OV Service",
@@ -23,9 +25,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-print(f"🔹 Loading Lipids OV model from: {OV_DIR}")
-tokenizer = AutoTokenizer.from_pretrained(OV_DIR, use_fast=True)
-model = OVModelForCausalLM.from_pretrained(OV_DIR, device="CPU")
+print(f"🔹 Loading Lipids OV model from: {model_path}")
+tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+model = OVModelForCausalLM.from_pretrained(model_path, device="CPU")
 
 
 class LipidsRequest(BaseModel):
@@ -73,5 +75,5 @@ def lipids_plan(req: LipidsRequest) -> LipidsResponse:
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "model_path": str(OV_DIR)}
+    return {"status": "ok", "model_path": str(model_path)}
 

@@ -3,109 +3,72 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from openvino import Core
-from transformers import AutoTokenizer, AutoConfig
+from optimum.intel.openvino import OVModelForCausalLM
+from transformers import AutoTokenizer
 
 # -------------------------------------------------------------------
-# Paths (inside container: /models is volume)
-# We'll bind:
-#   /home/agenticai/agenticai/models/hypertension_qwen_merged_fp16 -> /models/hypertension_qwen_merged_fp16
-#   /home/agenticai/models/hypertension_qwen_ov                    -> /models/hypertension_qwen_ov
+# Config: Standardized Path
 # -------------------------------------------------------------------
-MERGED_DIR = Path(os.getenv("MERGED_DIR", "/models/hypertension_qwen_merged_fp16"))
-OV_DIR     = Path(os.getenv("OV_DIR", "/models/hypertension_qwen_ov"))
+model_path = os.getenv("MODEL_DIR", "/model")
 
-MAX_NEW_TOKENS_DEFAULT = int(os.getenv("MAX_NEW_TOKENS", "80"))
-
-print("🔹 Loading tokenizer & config from:", MERGED_DIR)
-tokenizer = AutoTokenizer.from_pretrained(
-    str(MERGED_DIR),
-    use_fast=True,
-    local_files_only=True,
-    trust_remote_code=True,
+app = FastAPI(
+    title="Hypertension Qwen OV Service",
+    description="OpenVINO-based Hypertension Specialist Agent (Optimum)",
+    version="2.0.0",
 )
-config = AutoConfig.from_pretrained(
-    str(MERGED_DIR),
-    local_files_only=True,
-    trust_remote_code=True,
+
+print(f"🔹 Loading Hypertension OV model from: {model_path}")
+# Load Tokenizer
+tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+
+# Load Model using Optimum (Auto-handles the KV Cache state issues)
+model = OVModelForCausalLM.from_pretrained(
+    model_path, 
+    device="CPU",
+    ov_config={"INFERENCE_PRECISION_HINT": "bf16"}
 )
-EOS_ID = config.eos_token_id or tokenizer.eos_token_id
-
-print("🔹 Loading OpenVINO model from:", OV_DIR)
-core = Core()
-# Hint BF16 on Xeon
-core.set_property("CPU", {"INFERENCE_PRECISION_HINT": "bf16"})
-
-compiled_model = core.compile_model(str(OV_DIR / "model_fp16.xml"), "CPU")
-OUTPUT_PORT = compiled_model.output(0)
 
 # -------------------------------------------------------------------
-# Request / Response schemas
+# Schemas
 # -------------------------------------------------------------------
 class GenerateRequest(BaseModel):
     prompt: str
-    max_new_tokens: Optional[int] = None
-
+    max_new_tokens: int = 256
+    temperature: float = 0.1
+    top_p: float = 0.9
 
 class GenerateResponse(BaseModel):
-    prompt: str
     completion: str
-    num_tokens: int
-
 
 # -------------------------------------------------------------------
-# Simple greedy generation – same logic as test_ov_htn_bf16.py
+# Routes
 # -------------------------------------------------------------------
-def greedy_generate_ov(prompt: str, max_new_tokens: int) -> str:
-    enc = tokenizer(prompt, return_tensors="np")
-    input_ids = enc["input_ids"]          # (1, T)
-    attention_mask = enc["attention_mask"]
-
-    for _ in range(max_new_tokens):
-        res = compiled_model(
-            {
-                "input_ids": input_ids,
-                "attention_mask": attention_mask,
-            }
-        )
-        logits = res[OUTPUT_PORT]         # (1, seq_len, vocab_size)
-        next_id = int(logits[0, -1].argmax())
-
-        # append token
-        input_ids = np.concatenate([input_ids, [[next_id]]], axis=1)
-        attention_mask = np.concatenate([attention_mask, [[1]]], axis=1)
-
-        if EOS_ID is not None and next_id == EOS_ID:
-            break
-
-    full_text = tokenizer.decode(input_ids[0], skip_special_tokens=True)
-    completion = full_text[len(prompt):].strip()
-    return completion
-
-
-# -------------------------------------------------------------------
-# FastAPI app
-# -------------------------------------------------------------------
-app = FastAPI(title="Hypertension Qwen OpenVINO Service (Greedy BF16)")
-
-
-@app.get("/")
-def root():
-    return {"status": "ok", "model": "hypertension_qwen_ov_bf16_greedy"}
-
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "model_path": str(model_path)}
 
 @app.post("/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
-    max_new = req.max_new_tokens or MAX_NEW_TOKENS_DEFAULT
-    completion = greedy_generate_ov(req.prompt, max_new_tokens=max_new)
-    num_tokens = len(tokenizer.encode(completion))
-
-    return GenerateResponse(
-        prompt=req.prompt,
-        completion=completion,
-        num_tokens=num_tokens,
+    # 1. Tokenize
+    inputs = tokenizer(req.prompt, return_tensors="pt")
+    
+    # 2. Generate (Optimum handles the loop and state)
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=req.max_new_tokens,
+        temperature=req.temperature,
+        top_p=req.top_p,
+        do_sample=req.temperature > 0.0,
+        repetition_penalty=1.1,
     )
+    
+    # 3. Decode
+    text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    
+    # 4. Clean Output (Remove original prompt if echoed)
+    response_text = text[len(req.prompt):] if text.startswith(req.prompt) else text
+    
+    return GenerateResponse(completion=response_text)

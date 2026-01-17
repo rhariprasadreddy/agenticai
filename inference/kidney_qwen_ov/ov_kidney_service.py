@@ -20,25 +20,28 @@ from transformers import AutoTokenizer
 # We will mount that into the container at /models/qwen2.5-1.5b-kidney-ov
 # and refer to it via KIDNEY_MODEL_DIR.
 # ----------------------------------------------------------------------
+# ... imports ...
 
-MODEL_DIR = Path(
-    os.getenv(
-        "KIDNEY_MODEL_DIR",
-        "/models/qwen2.5-1.5b-kidney-ov",
-    )
-).resolve()
+# ----------------------------------------------------------------------
+# Config: Standardized Path
+# ----------------------------------------------------------------------
+import os
 
-print(f"🔹 Starting Kidney OV service. MODEL_DIR = {MODEL_DIR}")
+model_path = Path(os.getenv("MODEL_DIR", "/model"))
 
-if not MODEL_DIR.is_dir():
-    raise RuntimeError(f"❌ Kidney OV model directory not found: {MODEL_DIR}")
+print(f"🔹 Starting Kidney OV service. model_path = {model_path}")
+
+# Now this will work because model_path is a Path object
+if not model_path.is_dir():
+    raise RuntimeError(f"❌ Kidney OV model directory not found: {model_path}")
+
 
 # ----------------------------------------------------------------------
 # Load tokenizer + OV model at startup
 # ----------------------------------------------------------------------
-tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=True)
+tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
 model = OVModelForCausalLM.from_pretrained(
-    MODEL_DIR,
+    model_path,
     device="CPU",  # Xeon CPU inference
 )
 
@@ -81,7 +84,7 @@ def build_full_prompt(user_prompt: str) -> str:
 # ----------------------------------------------------------------------
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "model_dir": str(MODEL_DIR)}
+    return {"status": "ok", "model_path": str(model_path)}
 
 
 @app.post("/generate", response_model=GenerateResponse)
