@@ -73,4 +73,6 @@ eval/
 *_xeon_backup_*/
 agenticai-repo/
 _extras_not_in_git/
-inference/**/backups/
+inference/**/backups/venv_tests/
+__pycache__/
+*.pyc
