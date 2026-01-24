@@ -5,7 +5,7 @@ import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -50,22 +50,15 @@ SERVICES = {
     }
 }
 
-# MAP UI NAMES TO INTERNAL KEYS (Crucial for routing)
 CONDITION_MAP = {
-    "High Cholesterol": "Lipids",
-    "Cholesterol": "Lipids",
-    "Chronic Kidney Disease": "Kidney",
-    "Kidney Failure": "Kidney",
-    "Renal": "Kidney",
-    "High Blood Pressure": "Hypertension",
-    "Hypertension": "Hypertension",
-    "Type 2 Diabetes": "Diabetes",
-    "Diabetes Type 2": "Diabetes",
-    "Diabetes": "Diabetes"
+    "High Cholesterol": "Lipids", "Cholesterol": "Lipids",
+    "Chronic Kidney Disease": "Kidney", "Renal": "Kidney", "Kidney Failure": "Kidney",
+    "High Blood Pressure": "Hypertension", "Hypertension": "Hypertension",
+    "Type 2 Diabetes": "Diabetes", "Diabetes": "Diabetes", "Diabetes Type 2": "Diabetes"
 }
 
 class MedicalRecord(BaseModel):
-    condition: Union[str, List[str]] # Handles both single string and list inputs
+    condition: Union[str, List[str]]
     current_meds: List[str]
 
 class UserRequest(BaseModel):
@@ -75,51 +68,34 @@ class UserRequest(BaseModel):
     location: str
     medical_record: MedicalRecord
     user_query: str
+    # ABLATION FLAGS (Default to True for normal operation)
+    enable_rag: Optional[bool] = True
+    enable_kg: Optional[bool] = True
 
-# --- ROBUST PARSING (Fixes UI Crashes) ---
+# --- PARSING ---
 def clean_json_text(text: str) -> str:
-    # Remove Markdown
     match = re.search(r"```(?:json)?(.*?)```", text, re.DOTALL)
     if match: text = match.group(1)
-    
-    # Remove Echoed Prompt (Heuristic: Find the first outer brace)
     first_brace = text.find("{")
     if first_brace != -1: text = text[first_brace:]
-    
     return text.strip()
 
 def repair_agent_output(raw_output: Any) -> Dict:
     if isinstance(raw_output, dict): return raw_output
     text = str(raw_output)
     clean_text = clean_json_text(text)
-    
-    # Try parsing cleaned text
     try: return json.loads(clean_text)
     except: pass
-    
-    # Try hunting for JSON object
     try:
         start = text.find("{")
         end = text.rfind("}") + 1
         if start != -1 and end != -1: return json.loads(text[start:end])
     except: pass
-
-    # UI-SAFE FALLBACK: Returns LISTS, not strings.
-    logger.warning("JSON Parsing Failed. Returning Structured Fallback.")
-    return {
-        "meal_plan": {
-            "breakfast": ["See detailed guidelines below"],
-            "lunch": ["See detailed guidelines below"],
-            "dinner": ["See detailed guidelines below"],
-            "guidelines": text[:1500] 
-        }, 
-        "warnings": ["⚠️ Parsing Error: Showing raw model output."]
-    }
+    return {"meal_plan": {"guidelines": text[:1500]}, "warnings": ["⚠️ Parsing Error"]}
 
 def validate_safety(plan_json, avoid_list):
     warnings = []
     avoid_normalized = [x.lower() for x in avoid_list]
-    
     def scan(obj):
         if isinstance(obj, dict):
             for v in obj.values(): scan(v)
@@ -132,125 +108,96 @@ def validate_safety(plan_json, avoid_list):
     scan(plan_json)
     return list(set(warnings))
 
-# --- MAIN AGENTIC PIPELINE ---
 @app.post("/run-pipeline")
 async def run_pipeline(request: UserRequest):
     state = {"guidelines": [], "avoid": []}
     
-    # 1. NORMALIZE CONDITIONS
-    # Handle Input Variations (String vs List)
+    # 1. NORMALIZE
     raw_input = request.medical_record.condition
-    if isinstance(raw_input, str):
-        raw_list = [c.strip() for c in raw_input.split(",")]
-    else:
-        raw_list = raw_input
-
-    # Map to internal keys
+    if isinstance(raw_input, str): raw_list = [c.strip() for c in raw_input.split(",")]
+    else: raw_list = raw_input
+    
     active_conditions = []
     for item in raw_list:
         mapped = CONDITION_MAP.get(item, item)
-        if mapped in SERVICES:
-            active_conditions.append(mapped)
-            
-    # Remove duplicates
-    active_conditions = list(set(active_conditions))
-
-    if not active_conditions:
-        return {"error": f"No specialist found for {raw_input}"}
-
-    logger.info(f"Active Conditions: {active_conditions}")
-
-    # 2. CALL AGENT A1 (The Rule Engine) - PURE DYNAMIC LOGIC
-    # We send ALL conditions to A1. A1 returns the merged "Avoid List".
-    try:
-        payload_a1 = request.dict()
-        payload_a1["ailments"] = active_conditions # Send ["Kidney", "Diabetes"]
-        
-        logger.info(f"Calling A1 Rules Agent with: {active_conditions}")
-        r1 = requests.post(A1_SERVICE, json=payload_a1, timeout=5)
-        
-        if r1.status_code == 200:
-            state["avoid"] = r1.json().get("avoid_foods", [])
-            logger.info(f"A1 Returned Avoid List: {state['avoid']}")
-        else:
-            logger.error(f"A1 Failed: {r1.status_code}")
-    except Exception as e:
-        logger.error(f"A1 Connection Error: {e}")
-
-    # 3. SELECT PRIMARY SPECIALIST (Hierarchy of Criticality)
-    # Logic: Kidney is harder to manage than Diabetes, which is harder than Lipids.
-    if "Kidney" in active_conditions:
-        primary_condition = "Kidney"
-    elif "Diabetes" in active_conditions:
-        primary_condition = "Diabetes"
-    elif "Hypertension" in active_conditions:
-        primary_condition = "Hypertension"
-    else:
-        primary_condition = active_conditions[0]
-
-    service_group = SERVICES[primary_condition]
+        if mapped in SERVICES: active_conditions.append(mapped)
     
-    # 4. RAG & KG (Context Retrieval)
-    rag_context = ""
-    try:
-        # Query RAG for the PRIMARY condition
-        r_rag = requests.post(service_group["rag"], json={"query": request.user_query, "top_k": 3}, timeout=5)
-        if r_rag.status_code == 200:
-            results = r_rag.json().get("results", [])
-            rag_context = " ".join([r.get("content", "") for r in results])
-    except Exception as e:
-        logger.warning(f"RAG Error: {e}")
+    if not active_conditions: return {"error": "No specialist found"}
+    
+    # 2. RULE AGENT (A1) - Always Active for Safety
+    combined_avoid = set()
+    for cond in active_conditions:
+        try:
+            payload_a1 = request.dict(); payload_a1["ailments"] = [cond]
+            r1 = requests.post(A1_SERVICE, json=payload_a1, timeout=5)
+            if r1.status_code == 200: combined_avoid.update(r1.json().get("avoid_foods", []))
+        except: pass
+    state["avoid"] = list(combined_avoid)
+    avoid_str = ", ".join(state["avoid"])
 
-    # 5. SPECIALIST AGENT EXECUTION
+    # Select Primary Specialist
+    primary_condition = active_conditions[0]
+    if "Kidney" in active_conditions: primary_condition = "Kidney"
+    elif "Diabetes" in active_conditions: primary_condition = "Diabetes"
+    
+    service_group = SERVICES[primary_condition]
+
+    # 3. RAG LAYER (Conditional)
+    rag_context = ""
+    if request.enable_rag:
+        try:
+            r_rag = requests.post(service_group["rag"], json={"query": request.user_query, "top_k": 3}, timeout=5)
+            if r_rag.status_code == 200:
+                results = r_rag.json().get("results", [])
+                rag_context = " ".join([r.get("content", "") for r in results])
+        except: pass
+    else:
+        rag_context = "No medical guidelines available."
+
+    # 4. KG LAYER (Conditional - Placeholder logic if KG service exists)
+    kg_context = ""
+    if request.enable_kg and "kg" in service_group:
+        # Placeholder for actual KG call if you have it running
+        kg_context = "" 
+    else:
+        kg_context = "No knowledge graph facts available."
+
+    # 5. AGENT EXECUTION
     attempts = 0
     max_retries = 2
-    avoid_str = ", ".join(state["avoid"])
     
-    # The Prompt combines: User Query + Medical Context + Strict Avoid List
     strong_instruction = (
         f"Role: Clinical Dietitian. Task: Create {primary_condition} meal plan.\n"
-        f"Patient Conditions: {', '.join(active_conditions)}\n"
-        f"User Query: {request.user_query}\n"
+        f"Conditions: {', '.join(active_conditions)}\n"
         f"Context: {rag_context[:600]}\n"
-        f"CRITICAL AVOID LIST: {avoid_str}\n"
-        f"Format: Valid JSON only. Keys: breakfast (list), lunch (list), dinner (list). No markdown."
+        f"KG Facts: {kg_context}\n"
+        f"Strict Avoid: {avoid_str}\n"
+        f"Format: Valid JSON keys: breakfast(list), lunch(list), dinner(list)."
     )
     
     final_result = {}
-
     while attempts < max_retries:
-        logger.info(f"Calling Specialist {primary_condition} (Attempt {attempts+1})...")
         payload = {"text": strong_instruction}
-        
         try:
             r_agent = requests.post(service_group["agent"], json=payload, timeout=90)
-            
             if r_agent.status_code == 200:
                 raw_json = r_agent.json()
                 raw_text = raw_json.get("plan", raw_json)
                 plan_result = repair_agent_output(raw_text)
-                
-                # Normalize structure
-                if "meal_plan" not in plan_result:
-                     plan_result = {"meal_plan": plan_result, "warnings": []}
+                if "meal_plan" not in plan_result: plan_result = {"meal_plan": plan_result, "warnings": []}
             else:
-                plan_result = {"meal_plan": {}, "error": f"Agent Error {r_agent.status_code}"}
+                plan_result = {"meal_plan": {}, "error": "Agent Failed"}
         except Exception as e:
             plan_result = {"meal_plan": {}, "error": str(e)}
 
-        # 6. SAFETY CHECK (The "Planner" Logic)
-        # We validate the Specialist's output against the A1 Rules.
         warnings = []
         if "meal_plan" in plan_result and isinstance(plan_result["meal_plan"], dict):
             warnings = validate_safety(plan_result["meal_plan"], state["avoid"])
-        
         plan_result["warnings"] = warnings
 
-        if not warnings:
-            return plan_result
+        if not warnings: return plan_result
         else:
-            logger.warning(f"Safety Violation: {warnings}. Retrying...")
-            strong_instruction += f" Remove {warnings}. Re-generate."
+            strong_instruction += f" Remove {warnings}. Retry."
             attempts += 1
             final_result = plan_result
 
