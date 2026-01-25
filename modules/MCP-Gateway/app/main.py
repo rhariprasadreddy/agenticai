@@ -8,6 +8,33 @@ from .schemas import ProfileV1
 from .security import require_api_key
 from .config import ORCH_URL
 from .utils import mask_phi
+import re
+import json
+
+def extract_clean_json(text: str):
+    """
+    Scans text for the first JSON object { ... } and returns it as a dict.
+    Handles Markdown code blocks and conversational preambles.
+    """
+    try:
+        # 1. Try direct parse
+        return json.loads(text)
+    except:
+        pass
+
+    # 2. Extract content inside ```json ... ``` or just { ... }
+    # Look for the first opening brace { and the last closing brace }
+    try:
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end != -1:
+            json_str = text[start:end]
+            return json.loads(json_str)
+    except Exception as e:
+        logger.error(f"JSON Clean failed: {e}")
+    
+    # 3. Fallback: Return text wrapped in a structure so it doesn't crash downstream
+    return {"raw_text": text}
 
 app = FastAPI(title="MCP Gateway", version="0.1.0")
 

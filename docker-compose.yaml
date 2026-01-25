@@ -1,75 +1,158 @@
 version: '3.8'
 
 services:
-  # ==== 1. Diabetes Agent (Port 8080) ====
-  diabetes:
-    container_name: agent-diabetes
-    image: diabetes-qwen-ov:optimum
-    restart: unless-stopped
-    working_dir: /app
-    volumes:
-      # Verified Code Path
-      - ./inference/diabetes_qwen_ov/ov_diabetes_service.py:/app/main.py
-      # Standardized Model Path
-      - ./models/openvino/diabetes/fp16:/model
+  # ==================================================
+  # 1. MCP GATEWAY (Ingress)
+  # ==================================================
+  mcp-gateway:
+    build:
+      context: ./modules/MCP-Gateway
+      dockerfile: Dockerfile
+    container_name: mcp-gateway
     environment:
-      - MODEL_DIR=/model
-      - PORT=8080
+      ORCH_URL: http://orchestrator:8081
+      API_KEY: dev-key
     ports:
       - "8080:8080"
-    command: uvicorn main:app --host 0.0.0.0 --port 8080
+    depends_on:
+      - orchestrator
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+    cpuset: "0-3"
 
-  # ==== 2. Hypertension Agent (Port 8082) ====
-  # ==== 2. Hypertension Agent ====
-  hypertension:
-    container_name: agent-hypertension
-    # OLD: image: hypertension-qwen-ov:latest  <-- DELETE THIS LINE
-    image: diabetes-qwen-ov:optimum           # <-- USE THIS (It has the 'optimum' library)
-    restart: unless-stopped
-    working_dir: /app
-    volumes:
-      - ./inference/hypertension_qwen_ov/ov_hypertension_service.py:/app/main.py
-      - ./models/openvino/hypertension/fp16:/model
+  # ==================================================
+  # 2. ORCHESTRATOR (The Brain)
+  # ==================================================
+  orchestrator:
+    build:
+      context: ./modules/Orchestrator
+      dockerfile: Dockerfile
+    container_name: orchestrator
     environment:
-      - MODEL_DIR=/model
-      - PORT=8082
-      - MAX_NEW_TOKENS=256
+      # --- AGENT CONNECTIONS (ALL LOCAL NOW) ---
+      # CRITICAL FIX: Point A1 to the local container, not the remote IP
+      A1_URL: "http://agent-a1:9001/diet-rules"
+      A2_URL: "http://agent-a2:9002"
+      A3_URL: "http://agent-a3:9003"
+      A4_URL: "http://agent-a4:9004"
+      A5_URL: "http://agent-a5:9005"
+      
+      # --- INFERENCE CONNECTIONS (Server B) ---
+      XEON_INFERENCE_URL: "http://192.168.2.69"
+      # Direct links for Orchestrator logic
+      DIABETES_SERVICE: "http://192.168.2.69:8080/v1/diabetes/plan"
+      LIPIDS_SERVICE: "http://192.168.2.69:9006/v1/lipids/plan"
+      KIDNEY_SERVICE: "http://192.168.2.69:9008/v1/kidney/plan"
+      HTN_SERVICE: "http://192.168.2.69:8082/generate"
+      
+      # KG & RAG Endpoints
+      KIDNEY_KG_URL: "http://192.168.2.69:9204/v1/kidney/kg/check_foods"
+      KIDNEY_RAG_URL: "http://192.168.2.69:9104/v1/kidney/search"
+      
     ports:
-      - "8082:8082"
-    command: uvicorn main:app --host 0.0.0.0 --port 8082
-    
-  # ==== 3. Kidney Agent (Port 9008) ====
-  kidney:
-    container_name: agent-kidney
-    image: kidney-qwen-ov:latest
-    restart: unless-stopped
-    working_dir: /app
-    volumes:
-      # Verified Code Path
-      - ./inference/kidney_qwen_ov/ov_kidney_service.py:/app/main.py
-      # Standardized Model Path
-      - ./models/openvino/kidney/fp16:/model
-    environment:
-      - MODEL_DIR=/model
-      - PORT=9008
-    ports:
-      - "9008:9008"
-    command: uvicorn main:app --host 0.0.0.0 --port 9008
+      - "8081:8081"
+    depends_on:
+      - agent-a1
+      - agent-a2
+      - agent-a3
+      - agent-a4
+      - agent-a5
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+    cpuset: "4-7"
 
-  # ==== 4. Lipids Agent (Port 9006) ====
-  lipids:
-    container_name: agent-lipids
-    image: lipids-ov-service:latest
-    restart: unless-stopped
-    working_dir: /app
-    volumes:
-      # Verified Code Path
-      - ./inference/lipids_qwen_ov/ov_lipids_service.py:/app/main.py
-      # Standardized Model Path
-      - ./models/openvino/lipids/fp16:/model
-    environment:
-      - MODEL_DIR=/model
-      - PORT=9006
+  # ==================================================
+  # 3. FRONTEND UI
+  # ==================================================
+  ui:
+    build:
+      context: ./modules/Frontend
+      dockerfile: Dockerfile
+    container_name: agent-ui
     ports:
-      - "9006:9006"
-    command: uvicorn main:app --host 0.0.0.0 --port 9006
+      - "8501:8501"
+    depends_on:
+      - orchestrator
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+    cpuset: "8-11"
+
+  # ==================================================
+  # 4. LOGIC AGENTS (A1 - A5)
+  # ==================================================
+  agent-a1:
+    build:
+      context: ./modules/A1-DietRules
+      dockerfile: Dockerfile
+    container_name: agent-a1
+    ports: ["9001:9001"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    cpuset: "12-13"
+
+  agent-a2:
+    build:
+      context: ./modules/A2-Gaps
+      dockerfile: Dockerfile
+    container_name: agent-a2
+    ports: ["9002:9002"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    cpuset: "14-15"
+
+  agent-a3:
+    build:
+      context: ./modules/A3-Targets
+      dockerfile: Dockerfile
+    container_name: agent-a3
+    ports: ["9003:9003"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    cpuset: "16-17"
+
+  agent-a4:
+    build:
+      context: ./modules/A4-Conflicts
+      dockerfile: Dockerfile
+    container_name: agent-a4
+    ports: ["9004:9004"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    cpuset: "18-19"
+
+  agent-a5:
+    build:
+      context: ./modules/A5-Planner
+      dockerfile: Dockerfile
+    container_name: agent-a5
+    environment:
+      # Point to Server B for any LLM needs
+      OV_URL: "http://192.168.2.69:8080"
+    ports: ["9005:9005"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    cpuset: "20-21"
