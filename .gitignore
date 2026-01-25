@@ -76,3 +76,4 @@ _extras_not_in_git/
 inference/**/backups/venv_tests/
 __pycache__/
 *.pyc
+venv_tests/
